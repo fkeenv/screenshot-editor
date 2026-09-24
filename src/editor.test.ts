@@ -1,10 +1,13 @@
 import { expect, test } from "vitest";
 import {
   addImageLayer,
+  addTextLayer,
   cropImageLayer,
+  editTextLayer,
   finishImageScale,
   fitImageLayerToCanvas,
-  moveImageLayer,
+  moveLayer,
+  nudgeLayer,
   openProject,
   previewImageScale,
   redo,
@@ -116,16 +119,115 @@ test.each([
   expect(project.canvasHeight).toBe(600);
 });
 
+test("adding a text box creates a layer separate from the canvas", () => {
+  const project = addTextLayer(openProject(), "text-1");
+
+  expect(project.layers).toEqual([
+    {
+      id: "text-1",
+      kind: "text",
+      name: "Text",
+      text: "Text",
+      x: 32,
+      y: 32,
+      fontFamily: "Arial",
+      fontSize: 24,
+      bold: false,
+      outlineWidth: 2,
+      outlineColor: "#000000",
+      lineSpacing: 1.2,
+      wrapWidth: 400,
+    },
+  ]);
+  expect(project.canvasWidth).toBe(800);
+  expect(project.canvasHeight).toBe(600);
+});
+
+test("pasted text and its drawing style are stored on the text layer", () => {
+  const added = addTextLayer(openProject(), "text-1");
+
+  const project = editTextLayer(added, "text-1", {
+    text: "/me looks around.\nHello there!",
+    fontFamily: "Verdana",
+    fontSize: 32,
+    bold: true,
+    outlineWidth: 3,
+    outlineColor: "#ff00aa",
+    lineSpacing: 1.5,
+    wrapWidth: 240,
+  });
+
+  expect(project.layers[0]).toMatchObject({
+    text: "/me looks around.\nHello there!",
+    fontFamily: "Verdana",
+    fontSize: 32,
+    bold: true,
+    outlineWidth: 3,
+    outlineColor: "#ff00aa",
+    lineSpacing: 1.5,
+    wrapWidth: 240,
+  });
+});
+
 test("dragging moves the image without moving or resizing the canvas", () => {
   const imported = projectWithImage();
 
-  const project = moveImageLayer(imported, "image-1", 48, 72);
+  const project = moveLayer(imported, "image-1", 48, 72);
 
   expect(project.layers[0]).toMatchObject({ x: 48, y: 72 });
   expect(project.canvasWidth).toBe(800);
   expect(project.canvasHeight).toBe(600);
   expect(project.panX).toBe(0);
   expect(project.panY).toBe(0);
+});
+
+test("dragging and nudging move the text layer", () => {
+  const added = addTextLayer(openProject(), "text-1");
+
+  const dragged = moveLayer(added, "text-1", 48, 72);
+  const nudged = nudgeLayer(dragged, "text-1", -1, 1);
+
+  expect(dragged.layers[0]).toMatchObject({ x: 48, y: 72 });
+  expect(nudged.layers[0]).toMatchObject({ x: 47, y: 73 });
+});
+
+test("undo and redo restore text, style, and position", () => {
+  const added = addTextLayer(openProject(), "text-1");
+  const edited = editTextLayer(added, "text-1", {
+    text: "A pasted roleplay line",
+    fontSize: 32,
+    bold: true,
+    wrapWidth: 240,
+  });
+  const moved = moveLayer(edited, "text-1", 48, 72);
+
+  const moveUndone = undo(moved);
+  expect(moveUndone.layers[0]).toMatchObject({
+    text: "A pasted roleplay line",
+    fontSize: 32,
+    bold: true,
+    wrapWidth: 240,
+    x: 32,
+    y: 32,
+  });
+
+  const editUndone = undo(moveUndone);
+  expect(editUndone.layers[0]).toMatchObject({
+    text: "Text",
+    fontSize: 24,
+    bold: false,
+    wrapWidth: 400,
+  });
+
+  const redone = redo(redo(editUndone));
+  expect(redone.layers[0]).toMatchObject({
+    text: "A pasted roleplay line",
+    fontSize: 32,
+    bold: true,
+    wrapWidth: 240,
+    x: 48,
+    y: 72,
+  });
 });
 
 test("scaling changes the image size without changing the canvas size", () => {
@@ -173,11 +275,8 @@ test("cropping keeps only the chosen image region", () => {
     height: 120,
   });
 
-  expect(project.layers[0]?.crop).toEqual({
-    x: 20,
-    y: 10,
-    width: 240,
-    height: 120,
+  expect(project.layers[0]).toMatchObject({
+    crop: { x: 20, y: 10, width: 240, height: 120 },
   });
   expect(project.canvasWidth).toBe(800);
   expect(project.canvasHeight).toBe(600);
@@ -199,17 +298,14 @@ test("cropping cannot restore pixels discarded by an earlier crop", () => {
     height: 180,
   });
 
-  expect(expanded.layers[0]?.crop).toEqual({
-    x: 20,
-    y: 10,
-    width: 240,
-    height: 120,
+  expect(expanded.layers[0]).toMatchObject({
+    crop: { x: 20, y: 10, width: 240, height: 120 },
   });
 });
 
 test("undo and redo restore image position, scale, and crop", () => {
   const imported = projectWithImage();
-  const moved = moveImageLayer(imported, "image-1", 48, 72);
+  const moved = moveLayer(imported, "image-1", 48, 72);
   const scaled = scaleImageLayer(moved, "image-1", 1.5);
   const cropped = cropImageLayer(scaled, "image-1", {
     x: 20,

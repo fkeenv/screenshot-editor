@@ -36,13 +36,45 @@ export type ImageLayer = {
   };
 };
 
+export type TextLayer = {
+  id: string;
+  kind: "text";
+  name: string;
+  text: string;
+  x: number;
+  y: number;
+  fontFamily: string;
+  fontSize: number;
+  bold: boolean;
+  outlineWidth: number;
+  outlineColor: string;
+  lineSpacing: number;
+  wrapWidth: number;
+};
+
+export type Layer = ImageLayer | TextLayer;
+
+export type TextLayerEdit = Partial<
+  Pick<
+    TextLayer,
+    | "text"
+    | "fontFamily"
+    | "fontSize"
+    | "bold"
+    | "outlineWidth"
+    | "outlineColor"
+    | "lineSpacing"
+    | "wrapWidth"
+  >
+>;
+
 type Snapshot = {
   canvasWidth: number;
   canvasHeight: number;
   zoom: number;
   panX: number;
   panY: number;
-  layers: ImageLayer[];
+  layers: Layer[];
 };
 
 export type Project = Snapshot & {
@@ -84,16 +116,17 @@ function commit(project: Project, next: Snapshot): Project {
   };
 }
 
-function updateImageLayer(
+function updateLayer<K extends Layer["kind"]>(
   project: Project,
   layerId: string,
-  update: (layer: ImageLayer) => ImageLayer,
+  kind: K,
+  update: (layer: Extract<Layer, { kind: K }>) => Layer,
   recordHistory = true,
 ): Project {
   let changed = false;
   const layers = project.layers.map((layer) => {
-    if (layer.id !== layerId) return layer;
-    const next = update(layer);
+    if (layer.id !== layerId || layer.kind !== kind) return layer;
+    const next = update(layer as Extract<Layer, { kind: K }>);
     changed = changed || next !== layer;
     return next;
   });
@@ -154,15 +187,66 @@ export function addImageLayer(
   });
 }
 
-export function moveImageLayer(
+export function addTextLayer(project: Project, id: string): Project {
+  const layer: TextLayer = {
+    id,
+    kind: "text",
+    name: "Text",
+    text: "Text",
+    x: 32,
+    y: 32,
+    fontFamily: "Arial",
+    fontSize: 24,
+    bold: false,
+    outlineWidth: 2,
+    outlineColor: "#000000",
+    lineSpacing: 1.2,
+    wrapWidth: 400,
+  };
+
+  return commit(project, {
+    ...snapshot(project),
+    layers: [...project.layers, layer],
+  });
+}
+
+export function editTextLayer(
+  project: Project,
+  layerId: string,
+  changes: TextLayerEdit,
+): Project {
+  return updateLayer(project, layerId, "text", (layer) => ({
+    ...layer,
+    ...changes,
+  }));
+}
+
+export function moveLayer(
   project: Project,
   layerId: string,
   x: number,
   y: number,
 ): Project {
-  return updateImageLayer(project, layerId, (layer) =>
-    layer.x === x && layer.y === y ? layer : { ...layer, x, y },
-  );
+  let changed = false;
+  const layers = project.layers.map((layer) => {
+    if (layer.id !== layerId || (layer.x === x && layer.y === y)) return layer;
+    changed = true;
+    return { ...layer, x, y };
+  });
+
+  return changed ? commit(project, { ...snapshot(project), layers }) : project;
+}
+
+export function nudgeLayer(
+  project: Project,
+  layerId: string,
+  deltaX: number,
+  deltaY: number,
+): Project {
+  const layer = project.layers.find((candidate) => candidate.id === layerId);
+  return layer
+    ? moveLayer(project, layerId, layer.x + deltaX, layer.y + deltaY)
+    : project;
 }
 
 export function scaleImageLayer(
@@ -170,7 +254,7 @@ export function scaleImageLayer(
   layerId: string,
   scale: number,
 ): Project {
-  return updateImageLayer(project, layerId, (layer) =>
+  return updateLayer(project, layerId, "image", (layer) =>
     layer.scale === scale ? layer : { ...layer, scale },
   );
 }
@@ -180,9 +264,10 @@ export function previewImageScale(
   layerId: string,
   scale: number,
 ): Project {
-  return updateImageLayer(
+  return updateLayer(
     project,
     layerId,
+    "image",
     (layer) => (layer.scale === scale ? layer : { ...layer, scale }),
     false,
   );
@@ -193,7 +278,10 @@ export function finishImageScale(
   layerId: string,
   previousScale: number,
 ): Project {
-  const finalScale = project.layers.find((layer) => layer.id === layerId)?.scale;
+  const finalScale = project.layers.find(
+    (layer): layer is ImageLayer =>
+      layer.id === layerId && layer.kind === "image",
+  )?.scale;
   if (finalScale === undefined || finalScale === previousScale) return project;
 
   const beforeGesture = previewImageScale(project, layerId, previousScale);
@@ -205,7 +293,7 @@ export function fitImageLayerToCanvas(
   layerId: string,
 ): Project {
   const layer = project.layers.find((candidate) => candidate.id === layerId);
-  if (!layer) return project;
+  if (!layer || layer.kind !== "image") return project;
 
   const scale = Math.min(
     project.canvasWidth / layer.crop.width,
@@ -219,7 +307,7 @@ export function cropImageLayer(
   layerId: string,
   crop: ImageLayer["crop"],
 ): Project {
-  return updateImageLayer(project, layerId, (layer) => {
+  return updateLayer(project, layerId, "image", (layer) => {
     const right = layer.crop.x + layer.crop.width;
     const bottom = layer.crop.y + layer.crop.height;
     const x = clamp(crop.x, layer.crop.x, right - 1);

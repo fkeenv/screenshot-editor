@@ -8,10 +8,13 @@ import {
 } from "react";
 import {
   addImageLayer,
+  addTextLayer,
   cropImageLayer,
+  editTextLayer,
   finishImageScale,
   fitImageLayerToCanvas,
-  moveImageLayer,
+  moveLayer,
+  nudgeLayer,
   openProject,
   previewImageScale,
   redo,
@@ -22,7 +25,10 @@ import {
   supportedImageFormat,
   undo,
   type ImageLayer,
+  type Layer,
   type Project,
+  type TextLayer,
+  type TextLayerEdit,
 } from "./editor";
 
 const PRESETS = [
@@ -32,8 +38,16 @@ const PRESETS = [
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 
-const TOOL_MENUS = ["File", "Edit", "Image", "View"] as const;
+const TOOL_MENUS = ["File", "Edit", "Image", "Text", "View"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
+
+const FONT_FAMILIES = [
+  "Arial",
+  "Verdana",
+  "Tahoma",
+  "Georgia",
+  "Courier New",
+] as const;
 
 function readImage(file: File): Promise<{
   source: string;
@@ -197,6 +211,110 @@ function ScaleControls({
   );
 }
 
+function TextControls({
+  layer,
+  onEdit,
+}: {
+  layer: TextLayer;
+  onEdit: (changes: TextLayerEdit) => void;
+}) {
+  function editNumber(
+    property:
+      | "fontSize"
+      | "outlineWidth"
+      | "lineSpacing"
+      | "wrapWidth",
+    value: string,
+    minimum: number,
+  ) {
+    const number = Number(value);
+    if (Number.isFinite(number)) onEdit({ [property]: Math.max(minimum, number) });
+  }
+
+  return (
+    <div className="text-controls">
+      <label className="text-content-control">
+        Text
+        <textarea
+          value={layer.text}
+          onChange={(event) => onEdit({ text: event.target.value })}
+          placeholder="Paste roleplay lines"
+        />
+      </label>
+      <label>
+        Font
+        <select
+          value={layer.fontFamily}
+          onChange={(event) => onEdit({ fontFamily: event.target.value })}
+        >
+          {FONT_FAMILIES.map((font) => (
+            <option key={font}>{font}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Size
+        <input
+          type="number"
+          min="1"
+          value={layer.fontSize}
+          onChange={(event) => editNumber("fontSize", event.target.value, 1)}
+        />
+      </label>
+      <button
+        type="button"
+        className={layer.bold ? "active-control" : ""}
+        aria-pressed={layer.bold}
+        onClick={() => onEdit({ bold: !layer.bold })}
+      >
+        Bold
+      </button>
+      <label>
+        Outline
+        <input
+          type="number"
+          min="0"
+          step="0.5"
+          value={layer.outlineWidth}
+          onChange={(event) =>
+            editNumber("outlineWidth", event.target.value, 0)
+          }
+        />
+      </label>
+      <label>
+        Outline color
+        <input
+          className="color-input"
+          type="color"
+          value={layer.outlineColor}
+          onChange={(event) => onEdit({ outlineColor: event.target.value })}
+        />
+      </label>
+      <label>
+        Line spacing
+        <input
+          type="number"
+          min="0.5"
+          step="0.1"
+          value={layer.lineSpacing}
+          onChange={(event) =>
+            editNumber("lineSpacing", event.target.value, 0.5)
+          }
+        />
+      </label>
+      <label>
+        Wrap width
+        <input
+          type="number"
+          min="1"
+          value={layer.wrapWidth}
+          onChange={(event) => editNumber("wrapWidth", event.target.value, 1)}
+        />
+      </label>
+    </div>
+  );
+}
+
 export function App() {
   const [project, setProject] = useState<Project>(openProject);
   const [width, setWidth] = useState(String(project.canvasWidth));
@@ -207,6 +325,10 @@ export function App() {
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
   );
+  const selectedImageLayer =
+    selectedLayer?.kind === "image" ? selectedLayer : undefined;
+  const selectedTextLayer =
+    selectedLayer?.kind === "text" ? selectedLayer : undefined;
 
   function applySize(nextWidth: number, nextHeight: number) {
     if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) return;
@@ -260,6 +382,13 @@ export function App() {
     }
   }
 
+  function addTextBox() {
+    const id = crypto.randomUUID();
+    setProject((current) => addTextLayer(current, id));
+    setSelectedLayerId(id);
+    setActiveMenu("Text");
+  }
+
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
     const viewport = event.currentTarget;
     const startX = event.clientX;
@@ -301,11 +430,11 @@ export function App() {
 
   function onLayerPointerDown(
     event: PointerEvent<HTMLDivElement>,
-    layer: ImageLayer,
+    layer: Layer,
   ) {
     event.stopPropagation();
     setSelectedLayerId(layer.id);
-    setActiveMenu("Image");
+    setActiveMenu(layer.kind === "image" ? "Image" : "Text");
     const element = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -341,7 +470,7 @@ export function App() {
       if (finalX === originX && finalY === originY) return;
 
       setProject((current) =>
-        moveImageLayer(
+        moveLayer(
           {
             ...current,
             layers: current.layers.map((currentLayer) =>
@@ -369,16 +498,48 @@ export function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "z"
+      ) {
+        event.preventDefault();
+        setProject((current) => (event.shiftKey ? redo(current) : undo(current)));
         return;
       }
+
+      if (
+        !selectedLayerId ||
+        !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+          event.key,
+        ) ||
+        (event.target instanceof HTMLElement &&
+          event.target.matches("input, textarea, select, button"))
+      ) {
+        return;
+      }
+
       event.preventDefault();
-      setProject((current) => (event.shiftKey ? redo(current) : undo(current)));
+      const distance = event.shiftKey ? 10 : 1;
+      const deltaX =
+        event.key === "ArrowLeft"
+          ? -distance
+          : event.key === "ArrowRight"
+            ? distance
+            : 0;
+      const deltaY =
+        event.key === "ArrowUp"
+          ? -distance
+          : event.key === "ArrowDown"
+            ? distance
+            : 0;
+      setProject((current) =>
+        nudgeLayer(current, selectedLayerId, deltaX, deltaY),
+      );
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [selectedLayerId]);
 
   return (
     <div className="app">
@@ -477,49 +638,83 @@ export function App() {
                 <button type="submit">Apply</button>
               </form>
 
-              {selectedLayer ? (
+              {selectedImageLayer ? (
                 <>
                   <div className="tool-divider" />
                   <ScaleControls
-                    key={selectedLayer.id}
-                    layer={selectedLayer}
+                    key={selectedImageLayer.id}
+                    layer={selectedImageLayer}
                     onPreview={(scale) =>
                       setProject((current) =>
-                        previewImageScale(current, selectedLayer.id, scale),
+                        previewImageScale(
+                          current,
+                          selectedImageLayer.id,
+                          scale,
+                        ),
                       )
                     }
                     onCommit={(previousScale) =>
                       setProject((current) =>
                         finishImageScale(
                           current,
-                          selectedLayer.id,
+                          selectedImageLayer.id,
                           previousScale,
                         ),
                       )
                     }
                     onSetScale={(scale) =>
                       setProject((current) =>
-                        scaleImageLayer(current, selectedLayer.id, scale),
+                        scaleImageLayer(current, selectedImageLayer.id, scale),
                       )
                     }
                     onFit={() =>
                       setProject((current) =>
-                        fitImageLayerToCanvas(current, selectedLayer.id),
+                        fitImageLayerToCanvas(current, selectedImageLayer.id),
                       )
                     }
                   />
                   <div className="tool-divider" />
                   <CropControls
-                    layer={selectedLayer}
+                    layer={selectedImageLayer}
                     onCrop={(crop) =>
                       setProject((current) =>
-                        cropImageLayer(current, selectedLayer.id, crop),
+                        cropImageLayer(current, selectedImageLayer.id, crop),
                       )
                     }
                   />
                 </>
               ) : (
                 <span className="tool-hint">Import or select an image to scale and crop it.</span>
+              )}
+            </>
+          ) : null}
+
+          {activeMenu === "Text" ? (
+            <>
+              <div className="control-group">
+                <button type="button" onClick={addTextBox}>
+                  Add text box
+                </button>
+                <span className="tool-hint">
+                  Drag on the canvas or use arrow keys to move the selected text.
+                </span>
+              </div>
+              {selectedTextLayer ? (
+                <>
+                  <div className="tool-divider" />
+                  <TextControls
+                    layer={selectedTextLayer}
+                    onEdit={(changes) =>
+                      setProject((current) =>
+                        editTextLayer(current, selectedTextLayer.id, changes),
+                      )
+                    }
+                  />
+                </>
+              ) : (
+                <span className="tool-hint">
+                  Add or select a text box to edit it.
+                </span>
               )}
             </>
           ) : null}
@@ -549,32 +744,54 @@ export function App() {
             transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
           }}
         >
-          {project.layers.map((layer) => (
-            <div
-              className={`image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
-              key={layer.id}
-              style={{
-                left: layer.x,
-                top: layer.y,
-                width: layer.crop.width * layer.scale,
-                height: layer.crop.height * layer.scale,
-              }}
-              title={layer.name}
-              onPointerDown={(event) => onLayerPointerDown(event, layer)}
-            >
-              <img
-                src={layer.source}
-                alt=""
-                draggable={false}
+          {project.layers.map((layer) =>
+            layer.kind === "image" ? (
+              <div
+                className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                key={layer.id}
                 style={{
-                  width: layer.naturalWidth * layer.scale,
-                  height: layer.naturalHeight * layer.scale,
-                  left: -layer.crop.x * layer.scale,
-                  top: -layer.crop.y * layer.scale,
+                  left: layer.x,
+                  top: layer.y,
+                  width: layer.crop.width * layer.scale,
+                  height: layer.crop.height * layer.scale,
                 }}
-              />
-            </div>
-          ))}
+                title={layer.name}
+                onPointerDown={(event) => onLayerPointerDown(event, layer)}
+              >
+                <img
+                  src={layer.source}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    width: layer.naturalWidth * layer.scale,
+                    height: layer.naturalHeight * layer.scale,
+                    left: -layer.crop.x * layer.scale,
+                    top: -layer.crop.y * layer.scale,
+                  }}
+                />
+              </div>
+            ) : (
+              <div
+                className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                key={layer.id}
+                style={{
+                  left: layer.x,
+                  top: layer.y,
+                  width: layer.wrapWidth,
+                  minHeight: layer.fontSize * layer.lineSpacing,
+                  fontFamily: layer.fontFamily,
+                  fontSize: layer.fontSize,
+                  fontWeight: layer.bold ? 700 : 400,
+                  lineHeight: layer.lineSpacing,
+                  WebkitTextStroke: `${layer.outlineWidth}px ${layer.outlineColor}`,
+                }}
+                title={layer.name}
+                onPointerDown={(event) => onLayerPointerDown(event, layer)}
+              >
+                {layer.text}
+              </div>
+            ),
+          )}
           <span className="canvas-size">
             {project.canvasWidth}×{project.canvasHeight}
           </span>
