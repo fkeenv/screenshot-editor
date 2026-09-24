@@ -14,7 +14,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -134,6 +136,15 @@ button:disabled {
   border-radius: 4px;
 }
 
+.tool-panel select,
+.tool-panel textarea {
+  padding: 6px 8px;
+  color: inherit;
+  background: #27272a;
+  border: 1px solid #52525b;
+  border-radius: 4px;
+}
+
 .tool-divider {
   width: 1px;
   height: 34px;
@@ -167,6 +178,25 @@ button:disabled {
 
 .scale-control input {
   width: 130px;
+}
+
+.text-controls {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.tool-panel .color-input {
+  width: 48px;
+  height: 32px;
+  padding: 3px;
+}
+
+button.active-control {
+  border-color: #60a5fa;
+  background: #1d4ed8;
 }
 
 .control-title {
@@ -203,16 +233,19 @@ button:disabled {
   user-select: none;
 }
 
-.image-layer {
+.canvas-layer {
   position: absolute;
-  overflow: hidden;
   cursor: move;
   touch-action: none;
 }
 
-.image-layer.selected {
+.canvas-layer.selected {
   outline: 2px solid #60a5fa;
   outline-offset: 1px;
+}
+
+.image-layer {
+  overflow: hidden;
 }
 
 .image-layer img {
@@ -220,6 +253,40 @@ button:disabled {
   max-width: none;
   pointer-events: none;
   user-select: none;
+}
+
+.text-layer {
+  color: #fff;
+  overflow-wrap: anywhere;
+  paint-order: stroke fill;
+  white-space: pre-wrap;
+}
+
+.text-layer.editing {
+  cursor: move;
+}
+
+.inline-text-editor {
+  display: block;
+  width: 100%;
+  min-height: 1lh;
+  padding: 0;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  cursor: text;
+  touch-action: auto;
+  user-select: text;
+  -webkit-text-stroke: inherit;
+  paint-order: inherit;
 }
 
 .canvas-size {
