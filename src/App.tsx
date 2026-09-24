@@ -38,13 +38,15 @@ export function App() {
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    const viewport = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
     const originX = project.panX;
     const originY = project.panY;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    viewport.setPointerCapture(event.pointerId);
 
     function onMove(move: globalThis.PointerEvent) {
+      if (move.buttons === 0) return;
       setProject((current) => ({
         ...current,
         panX: originX + move.clientX - startX,
@@ -53,14 +55,12 @@ export function App() {
     }
 
     function onUp(up: globalThis.PointerEvent) {
-      event.currentTarget.removeEventListener("pointermove", onMove);
-      event.currentTarget.removeEventListener("pointerup", onUp);
+      viewport.removeEventListener("pointermove", onMove);
+      viewport.removeEventListener("pointerup", onUp);
+      viewport.removeEventListener("pointercancel", onUp);
       const panX = originX + up.clientX - startX;
       const panY = originY + up.clientY - startY;
-      if (panX === originX && panY === originY) {
-        setProject((current) => ({ ...current, panX: originX, panY: originY }));
-        return;
-      }
+      if (panX === originX && panY === originY) return;
       setProject((current) =>
         setView(
           { ...current, panX: originX, panY: originY },
@@ -71,8 +71,9 @@ export function App() {
       );
     }
 
-    event.currentTarget.addEventListener("pointermove", onMove);
-    event.currentTarget.addEventListener("pointerup", onUp);
+    viewport.addEventListener("pointermove", onMove);
+    viewport.addEventListener("pointerup", onUp);
+    viewport.addEventListener("pointercancel", onUp);
   }
 
   useEffect(() => {
