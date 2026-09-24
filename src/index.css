@@ -188,12 +188,6 @@ button:disabled {
   align-items: end;
 }
 
-.text-content-control textarea {
-  width: 280px;
-  min-height: 54px;
-  resize: vertical;
-}
-
 .tool-panel .color-input {
   width: 48px;
   height: 32px;
@@ -266,6 +260,33 @@ button.active-control {
   overflow-wrap: anywhere;
   paint-order: stroke fill;
   white-space: pre-wrap;
+}
+
+.text-layer.editing {
+  cursor: text;
+}
+
+.inline-text-editor {
+  display: block;
+  width: 100%;
+  min-height: inherit;
+  padding: 0;
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  cursor: text;
+  touch-action: auto;
+  user-select: text;
+  -webkit-text-stroke: inherit;
+  paint-order: inherit;
 }
 
 .canvas-size {

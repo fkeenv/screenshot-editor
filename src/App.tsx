@@ -3,7 +3,9 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type FocusEvent,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
 } from "react";
 import {
@@ -233,14 +235,6 @@ function TextControls({
 
   return (
     <div className="text-controls">
-      <label className="text-content-control">
-        Text
-        <textarea
-          value={layer.text}
-          onChange={(event) => onEdit({ text: event.target.value })}
-          placeholder="Paste roleplay lines"
-        />
-      </label>
       <label>
         Font
         <select
@@ -315,6 +309,64 @@ function TextControls({
   );
 }
 
+function InlineTextEditor({
+  layer,
+  selectText,
+  onCommit,
+  onCancel,
+}: {
+  layer: TextLayer;
+  selectText: boolean;
+  onCommit: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const cancelEdit = useRef(false);
+
+  function resize(element: HTMLTextAreaElement) {
+    element.style.height = "0";
+    element.style.height = `${element.scrollHeight}px`;
+  }
+
+  useEffect(() => {
+    const element = textarea.current;
+    if (!element) return;
+    resize(element);
+    element.focus();
+    if (selectText) element.select();
+  }, [selectText]);
+
+  function finishEditing(event: FocusEvent<HTMLTextAreaElement>) {
+    if (cancelEdit.current) {
+      onCancel();
+      return;
+    }
+    onCommit(event.currentTarget.value);
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    event.stopPropagation();
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    cancelEdit.current = true;
+    event.currentTarget.blur();
+  }
+
+  return (
+    <textarea
+      ref={textarea}
+      className="inline-text-editor"
+      aria-label={`Edit ${layer.name}`}
+      defaultValue={layer.text}
+      spellCheck
+      onInput={(event) => resize(event.currentTarget)}
+      onBlur={finishEditing}
+      onKeyDown={handleKeyDown}
+      onPointerDown={(event) => event.stopPropagation()}
+    />
+  );
+}
+
 export function App() {
   const [project, setProject] = useState<Project>(openProject);
   const [width, setWidth] = useState(String(project.canvasWidth));
@@ -322,6 +374,8 @@ export function App() {
   const [selectedLayerId, setSelectedLayerId] = useState<string>();
   const [importError, setImportError] = useState<string>();
   const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
+  const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
+  const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
   );
@@ -386,7 +440,27 @@ export function App() {
     const id = crypto.randomUUID();
     setProject((current) => addTextLayer(current, id));
     setSelectedLayerId(id);
+    setEditingTextLayerId(id);
+    setSelectTextOnEdit(true);
     setActiveMenu("Text");
+  }
+
+  function beginTextEditing(layerId: string) {
+    setSelectedLayerId(layerId);
+    setEditingTextLayerId(layerId);
+    setSelectTextOnEdit(false);
+    setActiveMenu("Text");
+  }
+
+  function finishTextEditing(layerId: string, text: string) {
+    setProject((current) => editTextLayer(current, layerId, { text }));
+    setEditingTextLayerId(undefined);
+    setSelectTextOnEdit(false);
+  }
+
+  function cancelTextEditing() {
+    setEditingTextLayerId(undefined);
+    setSelectTextOnEdit(false);
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -499,6 +573,13 @@ export function App() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (
+        event.target instanceof HTMLElement &&
+        event.target.matches("input, textarea, select, button, [contenteditable='true']")
+      ) {
+        return;
+      }
+
+      if (
         (event.metaKey || event.ctrlKey) &&
         event.key.toLowerCase() === "z"
       ) {
@@ -511,9 +592,7 @@ export function App() {
         !selectedLayerId ||
         !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
           event.key,
-        ) ||
-        (event.target instanceof HTMLElement &&
-          event.target.matches("input, textarea, select, button"))
+        )
       ) {
         return;
       }
@@ -696,7 +775,7 @@ export function App() {
                   Add text box
                 </button>
                 <span className="tool-hint">
-                  Drag on the canvas or use arrow keys to move the selected text.
+                  Double-click text to edit it. Drag or use arrow keys to move it.
                 </span>
               </div>
               {selectedTextLayer ? (
@@ -772,7 +851,7 @@ export function App() {
               </div>
             ) : (
               <div
-                className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
                 key={layer.id}
                 style={{
                   left: layer.x,
@@ -787,8 +866,21 @@ export function App() {
                 }}
                 title={layer.name}
                 onPointerDown={(event) => onLayerPointerDown(event, layer)}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  beginTextEditing(layer.id);
+                }}
               >
-                {layer.text}
+                {editingTextLayerId === layer.id ? (
+                  <InlineTextEditor
+                    layer={layer}
+                    selectText={selectTextOnEdit}
+                    onCommit={(text) => finishTextEditing(layer.id, text)}
+                    onCancel={cancelTextEditing}
+                  />
+                ) : (
+                  layer.text
+                )}
               </div>
             ),
           )}

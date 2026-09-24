@@ -169,6 +169,15 @@ test("pasted text and its drawing style are stored on the text layer", () => {
   });
 });
 
+test("leaving text unchanged does not add an undo entry", () => {
+  const added = addTextLayer(openProject(), "text-1");
+
+  const unchanged = editTextLayer(added, "text-1", { text: "Text" });
+
+  expect(unchanged).toBe(added);
+  expect(unchanged.past).toHaveLength(1);
+});
+
 test("dragging moves the image without moving or resizing the canvas", () => {
   const imported = projectWithImage();
 

@@ -215,10 +215,12 @@ export function editTextLayer(
   layerId: string,
   changes: TextLayerEdit,
 ): Project {
-  return updateLayer(project, layerId, "text", (layer) => ({
-    ...layer,
-    ...changes,
-  }));
+  return updateLayer(project, layerId, "text", (layer) => {
+    const changed = (Object.keys(changes) as (keyof TextLayerEdit)[]).some(
+      (property) => changes[property] !== layer[property],
+    );
+    return changed ? { ...layer, ...changes } : layer;
+  });
 }
 
 export function moveLayer(
