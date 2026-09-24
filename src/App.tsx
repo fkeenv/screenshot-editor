@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
@@ -8,8 +9,11 @@ import {
 import {
   addImageLayer,
   cropImageLayer,
+  finishImageScale,
+  fitImageLayerToCanvas,
   moveImageLayer,
   openProject,
+  previewImageScale,
   redo,
   scaleImageLayer,
   setCanvasSize,
@@ -25,6 +29,11 @@ const PRESETS = [
   { width: 800, height: 600 },
   { width: 1150, height: 600 },
 ] as const;
+
+const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
+
+const TOOL_MENUS = ["File", "Edit", "Image", "View"] as const;
+type ToolMenu = (typeof TOOL_MENUS)[number];
 
 function readImage(file: File): Promise<{
   source: string;
@@ -131,35 +140,60 @@ function CropControls({
 
 function ScaleControls({
   layer,
-  onScale,
+  onPreview,
+  onCommit,
+  onSetScale,
+  onFit,
 }: {
   layer: ImageLayer;
-  onScale: (scale: number) => void;
+  onPreview: (scale: number) => void;
+  onCommit: (previousScale: number) => void;
+  onSetScale: (scale: number) => void;
+  onFit: () => void;
 }) {
-  const [percent, setPercent] = useState(Math.round(layer.scale * 100));
+  const gestureStart = useRef<number | undefined>(undefined);
+
+  function beginGesture() {
+    gestureStart.current ??= layer.scale;
+  }
+
+  function finishGesture() {
+    const previousScale = gestureStart.current;
+    gestureStart.current = undefined;
+    if (previousScale !== undefined) onCommit(previousScale);
+  }
+
+  const percent = Math.round(layer.scale * 100);
 
   return (
-    <form
-      className="control-group scale-control"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onScale(percent / 100);
-      }}
-    >
+    <div className="control-group scale-control">
       <label>
         Scale
         <input
           type="range"
           min="5"
-          max="400"
+          max={Math.max(400, percent)}
           step="5"
           value={percent}
-          onChange={(event) => setPercent(Number(event.target.value))}
+          onPointerDown={beginGesture}
+          onPointerUp={finishGesture}
+          onPointerCancel={finishGesture}
+          onKeyDown={beginGesture}
+          onKeyUp={finishGesture}
+          onBlur={finishGesture}
+          onChange={(event) => onPreview(Number(event.target.value) / 100)}
         />
       </label>
       <output>{percent}%</output>
-      <button type="submit">Apply scale</button>
-    </form>
+      <button type="button" onClick={onFit} title="Fit image to canvas">
+        Fit
+      </button>
+      {SCALE_PRESETS.map((scale) => (
+        <button type="button" key={scale} onClick={() => onSetScale(scale)}>
+          {scale * 100}%
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -169,6 +203,7 @@ export function App() {
   const [height, setHeight] = useState(String(project.canvasHeight));
   const [selectedLayerId, setSelectedLayerId] = useState<string>();
   const [importError, setImportError] = useState<string>();
+  const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
   );
@@ -216,6 +251,7 @@ export function App() {
         }),
       );
       setSelectedLayerId(id);
+      setActiveMenu("Image");
       setImportError(undefined);
     } catch (error) {
       setImportError(
@@ -269,6 +305,7 @@ export function App() {
   ) {
     event.stopPropagation();
     setSelectedLayerId(layer.id);
+    setActiveMenu("Image");
     const element = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -345,95 +382,162 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="toolbar">
-        <div className="control-group">
-          <button
-            type="button"
-            onClick={() => setProject(undo)}
-            disabled={project.past.length === 0}
-          >
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={() => setProject(redo)}
-            disabled={project.future.length === 0}
-          >
-            Redo
-          </button>
+      <header className="editor-chrome">
+        <div className="menu-row">
+          <span className="app-title">Screenshot editor</span>
+          <nav className="menu-tabs" role="tablist" aria-label="Editor tools">
+            {TOOL_MENUS.map((menu) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeMenu === menu}
+                aria-controls="active-tool-panel"
+                className={activeMenu === menu ? "active" : ""}
+                key={menu}
+                onClick={() => setActiveMenu(menu)}
+              >
+                {menu}
+              </button>
+            ))}
+          </nav>
+          <span className="document-status">
+            {project.canvasWidth}×{project.canvasHeight} · {Math.round(project.zoom * 100)}%
+          </span>
         </div>
 
-        <form className="control-group" onSubmit={applyTypedSize}>
-          {PRESETS.map((preset) => (
-            <button
-              key={`${preset.width}x${preset.height}`}
-              type="button"
-              onClick={() => applySize(preset.width, preset.height)}
-            >
-              {preset.width}×{preset.height}
-            </button>
-          ))}
-          <label>
-            Width
-            <input
-              value={width}
-              inputMode="numeric"
-              onChange={(event) => setWidth(event.target.value)}
-            />
-          </label>
-          <label>
-            Height
-            <input
-              value={height}
-              inputMode="numeric"
-              onChange={(event) => setHeight(event.target.value)}
-            />
-          </label>
-          <button type="submit">Apply size</button>
-        </form>
+        <div
+          className="tool-panel"
+          id="active-tool-panel"
+          role="tabpanel"
+          aria-label={`${activeMenu} tools`}
+        >
+          {activeMenu === "File" ? (
+            <div className="control-group">
+              <label className="import-button">
+                Import image
+                <input
+                  type="file"
+                  accept={SUPPORTED_IMAGE_ACCEPT}
+                  onChange={importImage}
+                />
+              </label>
+              <span className="tool-hint">JPG, PNG, WebP, GIF, or BMP</span>
+            </div>
+          ) : null}
 
-        <div className="control-group">
-          <button type="button" onClick={() => changeZoom(project.zoom / 1.25)}>
-            Zoom out
-          </button>
-          <span className="zoom-value">{Math.round(project.zoom * 100)}%</span>
-          <button type="button" onClick={() => changeZoom(project.zoom * 1.25)}>
-            Zoom in
-          </button>
+          {activeMenu === "Edit" ? (
+            <div className="control-group">
+              <button
+                type="button"
+                onClick={() => setProject(undo)}
+                disabled={project.past.length === 0}
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                onClick={() => setProject(redo)}
+                disabled={project.future.length === 0}
+              >
+                Redo
+              </button>
+              <span className="tool-hint">Ctrl/Cmd+Z · Shift+Ctrl/Cmd+Z</span>
+            </div>
+          ) : null}
+
+          {activeMenu === "Image" ? (
+            <>
+              <form className="control-group" onSubmit={applyTypedSize}>
+                <span className="control-title">Canvas size</span>
+                {PRESETS.map((preset) => (
+                  <button
+                    key={`${preset.width}x${preset.height}`}
+                    type="button"
+                    onClick={() => applySize(preset.width, preset.height)}
+                  >
+                    {preset.width}×{preset.height}
+                  </button>
+                ))}
+                <label>
+                  Width
+                  <input
+                    value={width}
+                    inputMode="numeric"
+                    onChange={(event) => setWidth(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Height
+                  <input
+                    value={height}
+                    inputMode="numeric"
+                    onChange={(event) => setHeight(event.target.value)}
+                  />
+                </label>
+                <button type="submit">Apply</button>
+              </form>
+
+              {selectedLayer ? (
+                <>
+                  <div className="tool-divider" />
+                  <ScaleControls
+                    key={selectedLayer.id}
+                    layer={selectedLayer}
+                    onPreview={(scale) =>
+                      setProject((current) =>
+                        previewImageScale(current, selectedLayer.id, scale),
+                      )
+                    }
+                    onCommit={(previousScale) =>
+                      setProject((current) =>
+                        finishImageScale(
+                          current,
+                          selectedLayer.id,
+                          previousScale,
+                        ),
+                      )
+                    }
+                    onSetScale={(scale) =>
+                      setProject((current) =>
+                        scaleImageLayer(current, selectedLayer.id, scale),
+                      )
+                    }
+                    onFit={() =>
+                      setProject((current) =>
+                        fitImageLayerToCanvas(current, selectedLayer.id),
+                      )
+                    }
+                  />
+                  <div className="tool-divider" />
+                  <CropControls
+                    layer={selectedLayer}
+                    onCrop={(crop) =>
+                      setProject((current) =>
+                        cropImageLayer(current, selectedLayer.id, crop),
+                      )
+                    }
+                  />
+                </>
+              ) : (
+                <span className="tool-hint">Import or select an image to scale and crop it.</span>
+              )}
+            </>
+          ) : null}
+
+          {activeMenu === "View" ? (
+            <div className="control-group">
+              <button type="button" onClick={() => changeZoom(project.zoom / 1.25)}>
+                Zoom out
+              </button>
+              <span className="zoom-value">{Math.round(project.zoom * 100)}%</span>
+              <button type="button" onClick={() => changeZoom(project.zoom * 1.25)}>
+                Zoom in
+              </button>
+            </div>
+          ) : null}
+
+          {importError ? <p className="import-error">{importError}</p> : null}
         </div>
-
-        <label className="import-button">
-          Import image
-          <input
-            type="file"
-            accept={SUPPORTED_IMAGE_ACCEPT}
-            onChange={importImage}
-          />
-        </label>
-
-        {selectedLayer ? (
-          <>
-            <ScaleControls
-              key={`${selectedLayer.id}-${selectedLayer.scale}`}
-              layer={selectedLayer}
-              onScale={(scale) =>
-                setProject((current) =>
-                  scaleImageLayer(current, selectedLayer.id, scale),
-                )
-              }
-            />
-            <CropControls
-              layer={selectedLayer}
-              onCrop={(crop) =>
-                setProject((current) =>
-                  cropImageLayer(current, selectedLayer.id, crop),
-                )
-              }
-            />
-          </>
-        ) : null}
-
-        {importError ? <p className="import-error">{importError}</p> : null}
       </header>
 
       <div className="viewport" onPointerDown={onViewportPointerDown}>

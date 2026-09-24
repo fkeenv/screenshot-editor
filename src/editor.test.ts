@@ -2,8 +2,11 @@ import { expect, test } from "vitest";
 import {
   addImageLayer,
   cropImageLayer,
+  finishImageScale,
+  fitImageLayerToCanvas,
   moveImageLayer,
   openProject,
+  previewImageScale,
   redo,
   scaleImageLayer,
   setCanvasSize,
@@ -133,6 +136,31 @@ test("scaling changes the image size without changing the canvas size", () => {
   expect(project.layers[0]).toMatchObject({ scale: 1.5 });
   expect(project.canvasWidth).toBe(800);
   expect(project.canvasHeight).toBe(600);
+});
+
+test("scale previews live and commits one undoable edit", () => {
+  const imported = projectWithImage();
+
+  const firstPreview = previewImageScale(imported, "image-1", 1.25);
+  const finalPreview = previewImageScale(firstPreview, "image-1", 1.5);
+
+  expect(firstPreview.layers[0]).toMatchObject({ scale: 1.25 });
+  expect(finalPreview.layers[0]).toMatchObject({ scale: 1.5 });
+  expect(finalPreview.past).toHaveLength(imported.past.length);
+
+  const committed = finishImageScale(finalPreview, "image-1", 1);
+
+  expect(committed.past).toHaveLength(imported.past.length + 1);
+  expect(undo(committed).layers[0]).toMatchObject({ scale: 1 });
+});
+
+test("fit scales the visible image region inside the canvas", () => {
+  const imported = projectWithImage();
+
+  const fitted = fitImageLayerToCanvas(imported, "image-1");
+
+  expect(fitted.layers[0]).toMatchObject({ scale: 2.5 });
+  expect(undo(fitted).layers[0]).toMatchObject({ scale: 1 });
 });
 
 test("cropping keeps only the chosen image region", () => {

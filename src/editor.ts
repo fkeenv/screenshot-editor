@@ -88,6 +88,7 @@ function updateImageLayer(
   project: Project,
   layerId: string,
   update: (layer: ImageLayer) => ImageLayer,
+  recordHistory = true,
 ): Project {
   let changed = false;
   const layers = project.layers.map((layer) => {
@@ -97,7 +98,11 @@ function updateImageLayer(
     return next;
   });
 
-  return changed ? commit(project, { ...snapshot(project), layers }) : project;
+  if (!changed) return project;
+
+  return recordHistory
+    ? commit(project, { ...snapshot(project), layers })
+    : { ...project, layers };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -168,6 +173,45 @@ export function scaleImageLayer(
   return updateImageLayer(project, layerId, (layer) =>
     layer.scale === scale ? layer : { ...layer, scale },
   );
+}
+
+export function previewImageScale(
+  project: Project,
+  layerId: string,
+  scale: number,
+): Project {
+  return updateImageLayer(
+    project,
+    layerId,
+    (layer) => (layer.scale === scale ? layer : { ...layer, scale }),
+    false,
+  );
+}
+
+export function finishImageScale(
+  project: Project,
+  layerId: string,
+  previousScale: number,
+): Project {
+  const finalScale = project.layers.find((layer) => layer.id === layerId)?.scale;
+  if (finalScale === undefined || finalScale === previousScale) return project;
+
+  const beforeGesture = previewImageScale(project, layerId, previousScale);
+  return scaleImageLayer(beforeGesture, layerId, finalScale);
+}
+
+export function fitImageLayerToCanvas(
+  project: Project,
+  layerId: string,
+): Project {
+  const layer = project.layers.find((candidate) => candidate.id === layerId);
+  if (!layer) return project;
+
+  const scale = Math.min(
+    project.canvasWidth / layer.crop.width,
+    project.canvasHeight / layer.crop.height,
+  );
+  return scaleImageLayer(project, layerId, scale);
 }
 
 export function cropImageLayer(
