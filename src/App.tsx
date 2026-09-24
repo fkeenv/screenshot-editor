@@ -39,6 +39,7 @@ const PRESETS = [
 ] as const;
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
+const TEXT_EDIT_FRAME_WIDTH = 6;
 
 const TOOL_MENUS = ["File", "Edit", "Image", "Text", "View"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
@@ -507,6 +508,9 @@ export function App() {
     layer: Layer,
   ) {
     event.stopPropagation();
+    if (layer.kind === "text" && editingTextLayerId === layer.id) {
+      event.preventDefault();
+    }
     setSelectedLayerId(layer.id);
     setActiveMenu(layer.kind === "image" ? "Image" : "Text");
     const element = event.currentTarget;
@@ -854,10 +858,30 @@ export function App() {
                 className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
                 key={layer.id}
                 style={{
-                  left: layer.x,
-                  top: layer.y,
-                  width: layer.wrapWidth,
-                  minHeight: layer.fontSize * layer.lineSpacing,
+                  left:
+                    layer.x -
+                    (editingTextLayerId === layer.id
+                      ? TEXT_EDIT_FRAME_WIDTH
+                      : 0),
+                  top:
+                    layer.y -
+                    (editingTextLayerId === layer.id
+                      ? TEXT_EDIT_FRAME_WIDTH
+                      : 0),
+                  width:
+                    layer.wrapWidth +
+                    (editingTextLayerId === layer.id
+                      ? TEXT_EDIT_FRAME_WIDTH * 2
+                      : 0),
+                  minHeight:
+                    layer.fontSize * layer.lineSpacing +
+                    (editingTextLayerId === layer.id
+                      ? TEXT_EDIT_FRAME_WIDTH * 2
+                      : 0),
+                  padding:
+                    editingTextLayerId === layer.id
+                      ? TEXT_EDIT_FRAME_WIDTH
+                      : 0,
                   fontFamily: layer.fontFamily,
                   fontSize: layer.fontSize,
                   fontWeight: layer.bold ? 700 : 400,

@@ -263,13 +263,13 @@ button.active-control {
 }
 
 .text-layer.editing {
-  cursor: text;
+  cursor: move;
 }
 
 .inline-text-editor {
   display: block;
   width: 100%;
-  min-height: inherit;
+  min-height: 1lh;
   padding: 0;
   overflow: hidden;
   color: inherit;
