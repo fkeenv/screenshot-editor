@@ -10,6 +10,7 @@
 
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 button,
@@ -17,19 +18,47 @@ input {
   font: inherit;
 }
 
+button,
+.import-button {
+  padding: 7px 10px;
+  color: inherit;
+  background: #27272a;
+  border: 1px solid #52525b;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover,
+.import-button:hover {
+  background: #3f3f46;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .app {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
 }
 
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px 16px;
   align-items: end;
   padding: 12px;
   border-bottom: 1px solid #3f3f46;
+  background: #18181b;
+  z-index: 1;
+}
+
+.control-group {
+  display: flex;
+  gap: 8px;
+  align-items: end;
 }
 
 .toolbar label {
@@ -38,8 +67,8 @@ input {
   font-size: 12px;
 }
 
-.toolbar input {
-  width: 88px;
+.toolbar input:not([type="range"]):not([type="file"]) {
+  width: 72px;
   padding: 6px 8px;
   color: inherit;
   background: #27272a;
@@ -47,22 +76,47 @@ input {
   border-radius: 4px;
 }
 
-.toolbar button {
-  padding: 7px 10px;
-  color: inherit;
-  background: #27272a;
-  border: 1px solid #52525b;
-  border-radius: 4px;
+.zoom-value,
+.scale-control output {
+  min-width: 42px;
+  padding-bottom: 7px;
+  color: #d4d4d8;
+  font-size: 13px;
+  text-align: center;
 }
 
-.toolbar button:disabled {
-  opacity: 0.4;
+.import-button {
+  display: block;
+  font-size: 13px;
+}
+
+.import-button input {
+  display: none;
+}
+
+.scale-control input {
+  width: 130px;
+}
+
+.control-title {
+  align-self: center;
+  color: #d4d4d8;
+  font-size: 13px;
+}
+
+.import-error {
+  width: 100%;
+  margin: 0;
+  color: #fca5a5;
+  font-size: 13px;
 }
 
 .viewport {
+  position: relative;
   overflow: hidden;
   cursor: grab;
   background: #09090b;
+  touch-action: none;
 }
 
 .viewport:active {
@@ -70,8 +124,41 @@ input {
 }
 
 .canvas {
+  position: relative;
+  overflow: hidden;
   background: #111827;
   border: 1px solid #52525b;
-  display: grid;
-  place-items: center;
+  transform-origin: top left;
+  user-select: none;
+}
+
+.image-layer {
+  position: absolute;
+  overflow: hidden;
+  cursor: move;
+  touch-action: none;
+}
+
+.image-layer.selected {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.image-layer img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.canvas-size {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 6px;
+  color: #d4d4d8;
+  background: rgb(9 9 11 / 75%);
+  border-radius: 3px;
+  font-size: 12px;
+  pointer-events: none;
 }
