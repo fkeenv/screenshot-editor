@@ -14,6 +14,7 @@ import {
   scaleImageLayer,
   setCanvasSize,
   setView,
+  SUPPORTED_IMAGE_ACCEPT,
   supportedImageFormat,
   undo,
   type ImageLayer,
@@ -24,9 +25,6 @@ const PRESETS = [
   { width: 800, height: 600 },
   { width: 1150, height: 600 },
 ] as const;
-
-const IMAGE_ACCEPT =
-  ".jpg,.jpeg,.png,.webp,.gif,.bmp,image/jpeg,image/png,image/webp,image/gif,image/bmp";
 
 function readImage(file: File): Promise<{
   source: string;
@@ -67,20 +65,12 @@ function CropControls({
   function applyCrop(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
-    const requestedX = Number(values.get("cropX"));
-    const requestedY = Number(values.get("cropY"));
-    const x = Math.max(0, Math.min(requestedX, layer.naturalWidth - 1));
-    const y = Math.max(0, Math.min(requestedY, layer.naturalHeight - 1));
-    const width = Math.max(
-      1,
-      Math.min(Number(values.get("cropWidth")), layer.naturalWidth - x),
-    );
-    const height = Math.max(
-      1,
-      Math.min(Number(values.get("cropHeight")), layer.naturalHeight - y),
-    );
-
-    onCrop({ x, y, width, height });
+    onCrop({
+      x: Number(values.get("cropX")),
+      y: Number(values.get("cropY")),
+      width: Number(values.get("cropWidth")),
+      height: Number(values.get("cropHeight")),
+    });
   }
 
   return (
@@ -95,8 +85,8 @@ function CropControls({
         <input
           name="cropX"
           type="number"
-          min="0"
-          max={layer.naturalWidth - 1}
+          min={layer.crop.x}
+          max={layer.crop.x + layer.crop.width - 1}
           defaultValue={layer.crop.x}
           required
         />
@@ -106,8 +96,8 @@ function CropControls({
         <input
           name="cropY"
           type="number"
-          min="0"
-          max={layer.naturalHeight - 1}
+          min={layer.crop.y}
+          max={layer.crop.y + layer.crop.height - 1}
           defaultValue={layer.crop.y}
           required
         />
@@ -118,7 +108,7 @@ function CropControls({
           name="cropWidth"
           type="number"
           min="1"
-          max={layer.naturalWidth - layer.crop.x}
+          max={layer.crop.width}
           defaultValue={layer.crop.width}
           required
         />
@@ -129,7 +119,7 @@ function CropControls({
           name="cropHeight"
           type="number"
           min="1"
-          max={layer.naturalHeight - layer.crop.y}
+          max={layer.crop.height}
           defaultValue={layer.crop.height}
           required
         />
@@ -414,7 +404,11 @@ export function App() {
 
         <label className="import-button">
           Import image
-          <input type="file" accept={IMAGE_ACCEPT} onChange={importImage} />
+          <input
+            type="file"
+            accept={SUPPORTED_IMAGE_ACCEPT}
+            onChange={importImage}
+          />
         </label>
 
         {selectedLayer ? (

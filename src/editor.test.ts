@@ -12,6 +12,19 @@ import {
   undo,
 } from "./editor";
 
+const TEST_IMAGE = {
+  id: "image-1",
+  name: "Screenshot",
+  source: "data:image/png;base64,example",
+  format: "image/png",
+  width: 320,
+  height: 180,
+} as const;
+
+function projectWithImage() {
+  return addImageLayer(openProject(), TEST_IMAGE);
+}
+
 test("a new project opens on a canvas with a visible size", () => {
   const project = openProject();
 
@@ -101,14 +114,7 @@ test.each([
 });
 
 test("dragging moves the image without moving or resizing the canvas", () => {
-  const imported = addImageLayer(openProject(), {
-    id: "image-1",
-    name: "Screenshot",
-    source: "data:image/png;base64,example",
-    format: "image/png",
-    width: 320,
-    height: 180,
-  });
+  const imported = projectWithImage();
 
   const project = moveImageLayer(imported, "image-1", 48, 72);
 
@@ -120,14 +126,7 @@ test("dragging moves the image without moving or resizing the canvas", () => {
 });
 
 test("scaling changes the image size without changing the canvas size", () => {
-  const imported = addImageLayer(openProject(), {
-    id: "image-1",
-    name: "Screenshot",
-    source: "data:image/png;base64,example",
-    format: "image/png",
-    width: 320,
-    height: 180,
-  });
+  const imported = projectWithImage();
 
   const project = scaleImageLayer(imported, "image-1", 1.5);
 
@@ -137,14 +136,7 @@ test("scaling changes the image size without changing the canvas size", () => {
 });
 
 test("cropping keeps only the chosen image region", () => {
-  const imported = addImageLayer(openProject(), {
-    id: "image-1",
-    name: "Screenshot",
-    source: "data:image/png;base64,example",
-    format: "image/png",
-    width: 320,
-    height: 180,
-  });
+  const imported = projectWithImage();
 
   const project = cropImageLayer(imported, "image-1", {
     x: 20,
@@ -163,15 +155,32 @@ test("cropping keeps only the chosen image region", () => {
   expect(project.canvasHeight).toBe(600);
 });
 
-test("undo and redo restore image position, scale, and crop", () => {
-  const imported = addImageLayer(openProject(), {
-    id: "image-1",
-    name: "Screenshot",
-    source: "data:image/png;base64,example",
-    format: "image/png",
+test("cropping cannot restore pixels discarded by an earlier crop", () => {
+  const imported = projectWithImage();
+  const cropped = cropImageLayer(imported, "image-1", {
+    x: 20,
+    y: 10,
+    width: 240,
+    height: 120,
+  });
+
+  const expanded = cropImageLayer(cropped, "image-1", {
+    x: 0,
+    y: 0,
     width: 320,
     height: 180,
   });
+
+  expect(expanded.layers[0]?.crop).toEqual({
+    x: 20,
+    y: 10,
+    width: 240,
+    height: 120,
+  });
+});
+
+test("undo and redo restore image position, scale, and crop", () => {
+  const imported = projectWithImage();
   const moved = moveImageLayer(imported, "image-1", 48, 72);
   const scaled = scaleImageLayer(moved, "image-1", 1.5);
   const cropped = cropImageLayer(scaled, "image-1", {

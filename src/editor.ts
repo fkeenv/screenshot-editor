@@ -1,26 +1,21 @@
-export type ImageFormat =
-  | "image/jpeg"
-  | "image/png"
-  | "image/webp"
-  | "image/gif"
-  | "image/bmp";
-
-const IMAGE_FORMATS = new Set<string>([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/bmp",
-]);
-
-const IMAGE_FORMAT_BY_EXTENSION: Record<string, ImageFormat> = {
+const IMAGE_FORMAT_BY_EXTENSION = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
   gif: "image/gif",
   bmp: "image/bmp",
-};
+} as const;
+
+export type ImageFormat =
+  (typeof IMAGE_FORMAT_BY_EXTENSION)[keyof typeof IMAGE_FORMAT_BY_EXTENSION];
+
+const IMAGE_FORMATS = new Set<string>(Object.values(IMAGE_FORMAT_BY_EXTENSION));
+
+export const SUPPORTED_IMAGE_ACCEPT = [
+  ...Object.keys(IMAGE_FORMAT_BY_EXTENSION).map((extension) => `.${extension}`),
+  ...IMAGE_FORMATS,
+].join(",");
 
 export type ImageLayer = {
   id: string;
@@ -65,7 +60,9 @@ export function supportedImageFormat(
   }
 
   const extension = fileName.split(".").at(-1)?.toLowerCase();
-  return extension ? IMAGE_FORMAT_BY_EXTENSION[extension] : undefined;
+  return extension
+    ? (IMAGE_FORMAT_BY_EXTENSION as Record<string, ImageFormat>)[extension]
+    : undefined;
 }
 
 function snapshot(project: Project): Snapshot {
@@ -101,6 +98,11 @@ function updateImageLayer(
   });
 
   return changed ? commit(project, { ...snapshot(project), layers }) : project;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  const finiteValue = Number.isFinite(value) ? value : min;
+  return Math.min(Math.max(finiteValue, min), max);
 }
 
 export function openProject(): Project {
@@ -173,14 +175,25 @@ export function cropImageLayer(
   layerId: string,
   crop: ImageLayer["crop"],
 ): Project {
-  return updateImageLayer(project, layerId, (layer) =>
-    layer.crop.x === crop.x &&
-    layer.crop.y === crop.y &&
-    layer.crop.width === crop.width &&
-    layer.crop.height === crop.height
+  return updateImageLayer(project, layerId, (layer) => {
+    const right = layer.crop.x + layer.crop.width;
+    const bottom = layer.crop.y + layer.crop.height;
+    const x = clamp(crop.x, layer.crop.x, right - 1);
+    const y = clamp(crop.y, layer.crop.y, bottom - 1);
+    const nextCrop = {
+      x,
+      y,
+      width: clamp(crop.width, 1, right - x),
+      height: clamp(crop.height, 1, bottom - y),
+    };
+
+    return layer.crop.x === nextCrop.x &&
+      layer.crop.y === nextCrop.y &&
+      layer.crop.width === nextCrop.width &&
+      layer.crop.height === nextCrop.height
       ? layer
-      : { ...layer, crop },
-  );
+      : { ...layer, crop: nextCrop };
+  });
 }
 
 export function setCanvasSize(
