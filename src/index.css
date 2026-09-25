@@ -129,6 +129,10 @@ button:disabled {
   font-size: 12px;
 }
 
+.tool-panel button {
+  font-size: 13px;
+}
+
 .tool-panel input:not([type="range"]):not([type="file"]) {
   width: 72px;
   padding: 6px 8px;
