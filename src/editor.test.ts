@@ -161,6 +161,38 @@ test("adding a text box creates a layer separate from the canvas", () => {
   expect(project.canvasHeight).toBe(600);
 });
 
+test("repeated text boxes receive numbered layer names", () => {
+  const project = addTextLayer(
+    addTextLayer(addTextLayer(openProject(), "text-1"), "text-2"),
+    "text-3",
+  );
+
+  expect(project.layers.map((layer) => layer.name)).toEqual([
+    "Text",
+    "Text (1)",
+    "Text (2)",
+  ]);
+});
+
+test("images with the same file name receive numbered layer names", () => {
+  const image = {
+    name: "screenshot.png",
+    source: "data:image/example",
+    format: "image/png" as const,
+    width: 320,
+    height: 180,
+  };
+  const project = addImageLayer(
+    addImageLayer(openProject(), { ...image, id: "image-1" }),
+    { ...image, id: "image-2" },
+  );
+
+  expect(project.layers.map((layer) => layer.name)).toEqual([
+    "screenshot.png",
+    "screenshot.png (1)",
+  ]);
+});
+
 test("reordering a layer changes its paint order from bottom to top", () => {
   const withTwoLayers = addTextLayer(
     addTextLayer(openProject(), "bottom"),

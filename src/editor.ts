@@ -489,6 +489,15 @@ export function openProject(): Project {
   };
 }
 
+function nextLayerName(project: Project, baseName: string): string {
+  const names = new Set(project.layers.map((layer) => layer.name));
+  if (!names.has(baseName)) return baseName;
+
+  let copyNumber = 1;
+  while (names.has(`${baseName} (${copyNumber})`)) copyNumber += 1;
+  return `${baseName} (${copyNumber})`;
+}
+
 export function addImageLayer(
   project: Project,
   image: {
@@ -503,7 +512,7 @@ export function addImageLayer(
   const layer: ImageLayer = {
     id: image.id,
     kind: "image",
-    name: image.name,
+    name: nextLayerName(project, image.name),
     visible: true,
     opacity: 1,
     source: image.source,
@@ -530,7 +539,7 @@ export function addTextLayer(
   const layer: TextLayer = {
     id,
     kind: "text",
-    name: "Text",
+    name: nextLayerName(project, "Text"),
     visible: true,
     opacity: 1,
     text: "Text",

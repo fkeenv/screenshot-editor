@@ -10,7 +10,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { Layer } from "./editor";
 
 export type LayerActions = {
@@ -32,6 +32,8 @@ type LayerRowProps = Omit<LayersPanelProps, "layers"> & {
   layer: Layer;
   index: number;
   layerCount: number;
+  onDragStart: (layerId: string) => void;
+  onDragEnd: () => void;
 };
 
 function LayerRow({
@@ -40,6 +42,8 @@ function LayerRow({
   layerCount,
   selectedLayerId,
   actions,
+  onDragStart,
+  onDragEnd,
 }: LayerRowProps) {
   const opacityStart = useRef<number | undefined>(undefined);
 
@@ -71,6 +75,23 @@ function LayerRow({
     >
       <Stack gap={8}>
         <Group gap={6} wrap="nowrap">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            draggable
+            aria-label={`Drag ${layer.name} to reorder`}
+            title="Drag to reorder"
+            onClick={(event) => event.stopPropagation()}
+            onDragStart={(event) => {
+              event.stopPropagation();
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/plain", layer.id);
+              onDragStart(layer.id);
+            }}
+            onDragEnd={onDragEnd}
+          >
+            ⠿
+          </ActionIcon>
           <ActionIcon
             variant="subtle"
             color="gray"
@@ -171,8 +192,69 @@ export function LayersPanel({
   selectedLayerId,
   actions,
 }: LayersPanelProps) {
+  const [draggedLayerId, setDraggedLayerId] = useState<string>();
+  const [dropSlot, setDropSlot] = useState<number>();
+  const displayLayers = [...layers].reverse();
+
+  function finishDragging() {
+    setDraggedLayerId(undefined);
+    setDropSlot(undefined);
+  }
+
+  function dropLayer(slot: number) {
+    if (!draggedLayerId) return;
+    const sourceIndex = displayLayers.findIndex(
+      (layer) => layer.id === draggedLayerId,
+    );
+    const draggedLayer = displayLayers[sourceIndex];
+    if (!draggedLayer) return finishDragging();
+
+    const reordered = displayLayers.filter(
+      (layer) => layer.id !== draggedLayerId,
+    );
+    const adjustedSlot = slot - (sourceIndex < slot ? 1 : 0);
+    const insertionIndex = Math.min(
+      Math.max(adjustedSlot, 0),
+      reordered.length,
+    );
+    reordered.splice(insertionIndex, 0, draggedLayer);
+    actions.reorder(draggedLayerId, layers.length - insertionIndex - 1);
+    finishDragging();
+  }
+
+  function dropTarget(slot: number) {
+    const active = draggedLayerId !== undefined && dropSlot === slot;
+    return (
+      <Box
+        h={8}
+        mx="xs"
+        style={{
+          borderRadius: 2,
+          background: active
+            ? "var(--mantine-primary-color-filled)"
+            : "transparent",
+        }}
+        onDragEnter={(event) => {
+          if (!draggedLayerId) return;
+          event.preventDefault();
+          setDropSlot(slot);
+        }}
+        onDragOver={(event) => {
+          if (!draggedLayerId) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          dropLayer(slot);
+        }}
+      />
+    );
+  }
+
   return (
     <Box
+      id="layers-panel"
       component="aside"
       aria-label="Layers"
       w={{ base: 220, sm: 280 }}
@@ -200,21 +282,27 @@ export function LayersPanel({
         </Text>
       ) : (
         <ScrollArea type="auto" style={{ flex: 1 }}>
-          <Stack gap={6} p="xs" role="list" aria-label="Layer stack">
-            {[...layers].reverse().map((layer, displayIndex) => {
+          <Stack gap={0} py="xs" role="list" aria-label="Layer stack">
+            {displayLayers.map((layer, displayIndex) => {
               const index = layers.length - displayIndex - 1;
               return (
-                <Box key={layer.id} role="listitem">
-                  <LayerRow
-                    layer={layer}
-                    index={index}
-                    layerCount={layers.length}
-                    selectedLayerId={selectedLayerId}
-                    actions={actions}
-                  />
+                <Box key={layer.id}>
+                  {dropTarget(displayIndex)}
+                  <Box role="listitem" px="xs">
+                    <LayerRow
+                      layer={layer}
+                      index={index}
+                      layerCount={layers.length}
+                      selectedLayerId={selectedLayerId}
+                      actions={actions}
+                      onDragStart={setDraggedLayerId}
+                      onDragEnd={finishDragging}
+                    />
+                  </Box>
                 </Box>
               );
             })}
+            {dropTarget(displayLayers.length)}
           </Stack>
         </ScrollArea>
       )}
