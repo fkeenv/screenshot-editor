@@ -7,14 +7,20 @@ import {
   contentToDocument,
   documentToContent,
   editTextLayer,
+  finishLayerOpacity,
   finishImageScale,
   fitImageLayerToCanvas,
   moveLayer,
   nudgeLayer,
   openProject,
   parseColoredText,
+  previewLayerOpacity,
   previewImageScale,
   redo,
+  reorderLayer,
+  renameLayer,
+  setLayerVisibility,
+  setLayerOpacity,
   resizeTextLayer,
   replaceTextRange,
   scaleImageLayer,
@@ -112,6 +118,8 @@ test.each([
       id: `image-${format}`,
       kind: "image",
       name: "Screenshot",
+      visible: true,
+      opacity: 1,
       source: "data:image/example",
       format,
       naturalWidth: 320,
@@ -134,6 +142,8 @@ test("adding a text box creates a layer separate from the canvas", () => {
       id: "text-1",
       kind: "text",
       name: "Text",
+      visible: true,
+      opacity: 1,
       text: "Text",
       colorRuns: [],
       x: 32,
@@ -149,6 +159,120 @@ test("adding a text box creates a layer separate from the canvas", () => {
   ]);
   expect(project.canvasWidth).toBe(800);
   expect(project.canvasHeight).toBe(600);
+});
+
+test("repeated text boxes receive numbered layer names", () => {
+  const project = addTextLayer(
+    addTextLayer(addTextLayer(openProject(), "text-1"), "text-2"),
+    "text-3",
+  );
+
+  expect(project.layers.map((layer) => layer.name)).toEqual([
+    "Text",
+    "Text (1)",
+    "Text (2)",
+  ]);
+});
+
+test("images with the same file name receive numbered layer names", () => {
+  const image = {
+    name: "screenshot.png",
+    source: "data:image/example",
+    format: "image/png" as const,
+    width: 320,
+    height: 180,
+  };
+  const project = addImageLayer(
+    addImageLayer(openProject(), { ...image, id: "image-1" }),
+    { ...image, id: "image-2" },
+  );
+
+  expect(project.layers.map((layer) => layer.name)).toEqual([
+    "screenshot.png",
+    "screenshot.png (1)",
+  ]);
+});
+
+test("reordering a layer changes its paint order from bottom to top", () => {
+  const withTwoLayers = addTextLayer(
+    addTextLayer(openProject(), "bottom"),
+    "top",
+  );
+
+  const project = reorderLayer(withTwoLayers, "bottom", 1);
+
+  expect(project.layers.map((layer) => layer.id)).toEqual(["top", "bottom"]);
+});
+
+test("hiding a layer records visibility without changing its content", () => {
+  const added = addTextLayer(openProject(), "text-1");
+
+  const project = setLayerVisibility(added, "text-1", false);
+
+  expect(project.layers[0]).toMatchObject({
+    id: "text-1",
+    visible: false,
+    text: "Text",
+  });
+});
+
+test("renaming a layer changes its panel name without changing its content", () => {
+  const added = addTextLayer(openProject(), "text-1");
+
+  const project = renameLayer(added, "text-1", "Caption");
+
+  expect(project.layers[0]).toMatchObject({ name: "Caption", text: "Text" });
+});
+
+test("setting opacity changes only a layer's visual strength", () => {
+  const added = addTextLayer(openProject(), "text-1");
+
+  const project = setLayerOpacity(added, "text-1", 0.4);
+
+  expect(project.layers[0]).toMatchObject({ opacity: 0.4, text: "Text" });
+});
+
+test("opacity previews live and commits one undoable edit", () => {
+  const added = addTextLayer(openProject(), "text-1");
+  const previewed = previewLayerOpacity(added, "text-1", 0.4);
+
+  expect(previewed.layers[0]).toMatchObject({ opacity: 0.4 });
+  expect(previewed.past).toHaveLength(added.past.length);
+
+  const committed = finishLayerOpacity(previewed, "text-1", 1);
+  expect(committed.past).toHaveLength(added.past.length + 1);
+  expect(undo(committed).layers[0]).toMatchObject({ opacity: 1 });
+});
+
+test("undo and redo restore layer order, visibility, name, and opacity", () => {
+  const base = addTextLayer(addTextLayer(openProject(), "bottom"), "top");
+  const changed = setLayerOpacity(
+    renameLayer(
+      setLayerVisibility(reorderLayer(base, "bottom", 1), "bottom", false),
+      "bottom",
+      "Background",
+    ),
+    "bottom",
+    0.35,
+  );
+
+  expect(changed.layers.map((layer) => layer.id)).toEqual(["top", "bottom"]);
+  expect(changed.layers[1]).toMatchObject({
+    visible: false,
+    name: "Background",
+    opacity: 0.35,
+  });
+
+  const original = undo(undo(undo(undo(changed))));
+  expect(original.layers.map((layer) => layer.id)).toEqual(["bottom", "top"]);
+  expect(original.layers[0]).toMatchObject({
+    visible: true,
+    name: "Text",
+    opacity: 1,
+  });
+
+  const restored = redo(redo(redo(redo(original))));
+  expect(restored.layers).toEqual(changed.layers);
 });
 
 test("a text box is placed where the canvas was clicked", () => {

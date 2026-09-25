@@ -21,6 +21,8 @@ export type ImageLayer = {
   id: string;
   kind: "image";
   name: string;
+  visible: boolean;
+  opacity: number;
   source: string;
   format: ImageFormat;
   naturalWidth: number;
@@ -304,6 +306,8 @@ export type TextLayer = {
   id: string;
   kind: "text";
   name: string;
+  visible: boolean;
+  opacity: number;
   text: string;
   colorRuns: TextColorRun[];
   x: number;
@@ -429,17 +433,17 @@ function commit(project: Project, next: Snapshot): Project {
   };
 }
 
-function updateLayer<K extends Layer["kind"]>(
+function updateMatchingLayer(
   project: Project,
   layerId: string,
-  kind: K,
-  update: (layer: Extract<Layer, { kind: K }>) => Layer,
+  matches: (layer: Layer) => boolean,
+  update: (layer: Layer) => Layer,
   recordHistory = true,
 ): Project {
   let changed = false;
   const layers = project.layers.map((layer) => {
-    if (layer.id !== layerId || layer.kind !== kind) return layer;
-    const next = update(layer as Extract<Layer, { kind: K }>);
+    if (layer.id !== layerId || !matches(layer)) return layer;
+    const next = update(layer);
     changed = changed || next !== layer;
     return next;
   });
@@ -449,6 +453,22 @@ function updateLayer<K extends Layer["kind"]>(
   return recordHistory
     ? commit(project, { ...snapshot(project), layers })
     : { ...project, layers };
+}
+
+function updateLayer<K extends Layer["kind"]>(
+  project: Project,
+  layerId: string,
+  kind: K,
+  update: (layer: Extract<Layer, { kind: K }>) => Layer,
+  recordHistory = true,
+): Project {
+  return updateMatchingLayer(
+    project,
+    layerId,
+    (layer) => layer.kind === kind,
+    (layer) => update(layer as Extract<Layer, { kind: K }>),
+    recordHistory,
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -469,6 +489,15 @@ export function openProject(): Project {
   };
 }
 
+function nextLayerName(project: Project, baseName: string): string {
+  const names = new Set(project.layers.map((layer) => layer.name));
+  if (!names.has(baseName)) return baseName;
+
+  let copyNumber = 1;
+  while (names.has(`${baseName} (${copyNumber})`)) copyNumber += 1;
+  return `${baseName} (${copyNumber})`;
+}
+
 export function addImageLayer(
   project: Project,
   image: {
@@ -483,7 +512,9 @@ export function addImageLayer(
   const layer: ImageLayer = {
     id: image.id,
     kind: "image",
-    name: image.name,
+    name: nextLayerName(project, image.name),
+    visible: true,
+    opacity: 1,
     source: image.source,
     format: image.format,
     naturalWidth: image.width,
@@ -508,7 +539,9 @@ export function addTextLayer(
   const layer: TextLayer = {
     id,
     kind: "text",
-    name: "Text",
+    name: nextLayerName(project, "Text"),
+    visible: true,
+    opacity: 1,
     text: "Text",
     colorRuns: [],
     x: position.x,
@@ -571,6 +604,114 @@ export function moveLayer(
   });
 
   return changed ? commit(project, { ...snapshot(project), layers }) : project;
+}
+
+export function reorderLayer(
+  project: Project,
+  layerId: string,
+  targetIndex: number,
+): Project {
+  const currentIndex = project.layers.findIndex(
+    (layer) => layer.id === layerId,
+  );
+  if (currentIndex < 0 || !Number.isFinite(targetIndex)) return project;
+  const destination = clamp(
+    Math.trunc(targetIndex),
+    0,
+    project.layers.length - 1,
+  );
+  if (currentIndex === destination) return project;
+
+  const layers = [...project.layers];
+  const [layer] = layers.splice(currentIndex, 1);
+  if (!layer) return project;
+  layers.splice(destination, 0, layer);
+  return commit(project, { ...snapshot(project), layers });
+}
+
+export function setLayerVisibility(
+  project: Project,
+  layerId: string,
+  visible: boolean,
+): Project {
+  return updateAnyLayer(project, layerId, (layer) =>
+    layer.visible === visible ? layer : { ...layer, visible },
+  );
+}
+
+export function renameLayer(
+  project: Project,
+  layerId: string,
+  name: string,
+): Project {
+  return updateAnyLayer(project, layerId, (layer) =>
+    layer.name === name ? layer : { ...layer, name },
+  );
+}
+
+export function setLayerOpacity(
+  project: Project,
+  layerId: string,
+  opacity: number,
+): Project {
+  return updateLayerOpacity(project, layerId, opacity, true);
+}
+
+export function previewLayerOpacity(
+  project: Project,
+  layerId: string,
+  opacity: number,
+): Project {
+  return updateLayerOpacity(project, layerId, opacity, false);
+}
+
+function updateLayerOpacity(
+  project: Project,
+  layerId: string,
+  opacity: number,
+  recordHistory: boolean,
+): Project {
+  const normalizedOpacity = clamp(opacity, 0, 1);
+  return updateAnyLayer(
+    project,
+    layerId,
+    (layer) =>
+      layer.opacity === normalizedOpacity
+        ? layer
+        : { ...layer, opacity: normalizedOpacity },
+    recordHistory,
+  );
+}
+
+export function finishLayerOpacity(
+  project: Project,
+  layerId: string,
+  previousOpacity: number,
+): Project {
+  const finalOpacity = project.layers.find(
+    (layer) => layer.id === layerId,
+  )?.opacity;
+  if (finalOpacity === undefined || finalOpacity === previousOpacity) {
+    return project;
+  }
+
+  const beforeGesture = previewLayerOpacity(project, layerId, previousOpacity);
+  return setLayerOpacity(beforeGesture, layerId, finalOpacity);
+}
+
+function updateAnyLayer(
+  project: Project,
+  layerId: string,
+  update: (layer: Layer) => Layer,
+  recordHistory = true,
+): Project {
+  return updateMatchingLayer(
+    project,
+    layerId,
+    () => true,
+    update,
+    recordHistory,
+  );
 }
 
 export function nudgeLayer(

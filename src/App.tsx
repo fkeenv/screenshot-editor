@@ -1,3 +1,4 @@
+import { Button } from "@mantine/core";
 import {
   useEffect,
   useRef,
@@ -11,16 +12,21 @@ import {
   addTextLayer,
   cropImageLayer,
   editTextLayer,
+  finishLayerOpacity,
   finishImageScale,
   fitImageLayerToCanvas,
   moveLayer,
   nudgeLayer,
   openProject,
+  previewLayerOpacity,
   previewImageScale,
+  renameLayer,
   redo,
+  reorderLayer,
   resizeTextLayer,
   scaleImageLayer,
   setCanvasSize,
+  setLayerVisibility,
   setView,
   SUPPORTED_IMAGE_ACCEPT,
   supportedImageFormat,
@@ -38,6 +44,7 @@ import {
   InlineTextEditor,
   type TextEditorHandle,
 } from "./InlineTextEditor";
+import { LayersPanel } from "./LayersPanel";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -372,6 +379,7 @@ export function App() {
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
   const [hasTextSelection, setHasTextSelection] = useState(false);
   const [placingText, setPlacingText] = useState(false);
+  const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const textEditor = useRef<TextEditorHandle | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedLayer = project.layers.find(
@@ -731,6 +739,17 @@ export function App() {
           <span className="document-status">
             {project.canvasWidth}×{project.canvasHeight} · {Math.round(project.zoom * 100)}%
           </span>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="compact-sm"
+            style={{ alignSelf: "center", marginLeft: 8 }}
+            aria-controls="layers-panel"
+            aria-expanded={layersPanelOpen}
+            onClick={() => setLayersPanelOpen((open) => !open)}
+          >
+            {layersPanelOpen ? "Hide layers" : "Show layers"}
+          </Button>
         </div>
 
         <div
@@ -944,6 +963,8 @@ export function App() {
                   top: layer.y,
                   width: layer.crop.width * layer.scale,
                   height: layer.crop.height * layer.scale,
+                  display: layer.visible ? undefined : "none",
+                  opacity: layer.opacity,
                 }}
                 title={layer.name}
                 onPointerDown={(event) => onLayerPointerDown(event, layer)}
@@ -994,6 +1015,8 @@ export function App() {
                   fontWeight: layer.bold ? 700 : 400,
                   lineHeight: layer.lineSpacing,
                   WebkitTextStroke: `${layer.outlineWidth}px ${layer.outlineColor}`,
+                  display: layer.visible ? undefined : "none",
+                  opacity: layer.opacity,
                 }}
                 title={layer.name}
                 onPointerDown={(event) => onLayerPointerDown(event, layer)}
@@ -1046,6 +1069,33 @@ export function App() {
           </span>
         </div>
       </div>
+      {layersPanelOpen ? (
+        <LayersPanel
+          layers={project.layers}
+          selectedLayerId={selectedLayerId}
+          actions={{
+            select: setSelectedLayerId,
+            reorder: (layerId, targetIndex) =>
+              setProject((current) =>
+                reorderLayer(current, layerId, targetIndex),
+              ),
+            rename: (layerId, name) =>
+              setProject((current) => renameLayer(current, layerId, name)),
+            setVisibility: (layerId, visible) =>
+              setProject((current) =>
+                setLayerVisibility(current, layerId, visible),
+              ),
+            previewOpacity: (layerId, opacity) =>
+              setProject((current) =>
+                previewLayerOpacity(current, layerId, opacity),
+              ),
+            commitOpacity: (layerId, previousOpacity) =>
+              setProject((current) =>
+                finishLayerOpacity(current, layerId, previousOpacity),
+              ),
+          }}
+        />
+      ) : null}
     </div>
   );
 }
