@@ -213,7 +213,7 @@ test("pasted chat lines recognize the supported SA-MP message types", () => {
   );
 
   expect(content.colorRuns.map((run) => run.color)).toEqual([
-    "#800000",
+    "#c2a3da",
     "#d0d0d0",
     "#ffff00",
     "#ffff99",

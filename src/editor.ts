@@ -49,7 +49,7 @@ export type TextContent = {
 
 export const TEXT_COLOR_PRESETS = {
   me: { label: "/me", color: "#c2a3da" },
-  do: { label: "/do", color: "#800000" },
+  do: { label: "/do", color: "#c2a3da" },
   say: { label: "Say", color: "#ffffff" },
   low: { label: "Low", color: "#d0d0d0" },
   whisper: { label: "Whisper", color: "#ffff00" },
