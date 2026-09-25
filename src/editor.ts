@@ -36,11 +36,276 @@ export type ImageLayer = {
   };
 };
 
+export type TextColorRun = {
+  start: number;
+  end: number;
+  color: string;
+};
+
+export type TextContent = {
+  text: string;
+  colorRuns: TextColorRun[];
+};
+
+export const TEXT_COLOR_PRESETS = {
+  me: { label: "/me", color: "#c2a3da" },
+  do: { label: "/do", color: "#c2a3da" },
+  say: { label: "Say / shout", color: "#f1f1f1" },
+  low: { label: "Low", color: "#adadad" },
+  whisper: { label: "Whisper", color: "#eda841" },
+  phone: { label: "Phone speech", color: "#fbf724" },
+  transaction: { label: "Item given / money", color: "#56d64b" },
+  inventory: { label: "Inventory", color: "#ffff00" },
+  radio: { label: "Radio", color: "#ece3a7" },
+  hq: { label: "HQ", color: "#006eff" },
+  phoneNotice: { label: "Phone notice", color: "#ffff00" },
+  intercom: { label: "Intercom / CK blue", color: "#3896f3" },
+  characterKill: { label: "CK red", color: "#f00000" },
+} as const;
+
+function inferredLineColor(line: string): string | undefined {
+  const message = line.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
+  const characterName =
+    "(?:[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*|Mask(?:_[\\p{L}\\p{N}]+)+)";
+  const rules: [RegExp, string][] = [
+    [
+      /^\*\s.+\(\(\s*.+?\s*\)\)\*?$/u,
+      TEXT_COLOR_PRESETS.do.color,
+    ],
+    [/^(?:\*|>)\s+/u, TEXT_COLOR_PRESETS.me.color],
+    [
+      /^(?:You paid \$|.+ paid you \$|You have (?:given|shown) .+\byour\b)/iu,
+      TEXT_COLOR_PRESETS.transaction.color,
+    ],
+    [
+      /^(?:You took \d+ .+ from\b|Info:\s*You took\b|You've just taken\b|You (?:equipped|unequipped|dropped)\b)/iu,
+      TEXT_COLOR_PRESETS.inventory.color,
+    ],
+    [/^\*\*\s*\[S:\s*.+?\]/iu, TEXT_COLOR_PRESETS.radio.color],
+    [/^(?:\*\*\s*)?\[HQ\]|^HQ:/iu, TEXT_COLOR_PRESETS.hq.color],
+    [/^\[PHONE\]/u, TEXT_COLOR_PRESETS.phoneNotice.color],
+    [/^\[INTERCOM\]|^Intercom:/iu, TEXT_COLOR_PRESETS.intercom.color],
+    [/^\[(?:Character kill|CK)\]/iu, TEXT_COLOR_PRESETS.characterKill.color],
+    [
+      /(?:\bsays \[(?:low)\]|\bsays quietly\b|\bmurmurs\b)/iu,
+      TEXT_COLOR_PRESETS.low.color,
+    ],
+    [
+      /(?:\bwhispers(?: to \d+ people)?\b|\bsays whispers\b)/iu,
+      TEXT_COLOR_PRESETS.whisper.color,
+    ],
+    [
+      /(?:\bsays \((?:cell)?phone\):|\bsays on the phone\b|^\(Phone - Loudspeaker\))/iu,
+      TEXT_COLOR_PRESETS.phone.color,
+    ],
+    [
+      /\bshouts(?: \(to .+?\))?:/iu,
+      TEXT_COLOR_PRESETS.say.color,
+    ],
+    [/\bsays(?: \(to .+?\))?(?::|\s)/iu, TEXT_COLOR_PRESETS.say.color],
+    [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me.color],
+  ];
+  return rules.find(([pattern]) => pattern.test(message))?.[1];
+}
+
+export type RichTextNode = {
+  type: string;
+  text?: string;
+  marks?: { type: string; attrs?: { color?: string | null } }[];
+  content?: RichTextNode[];
+};
+
+export function contentToDocument(content: TextContent): RichTextNode {
+  const lines = content.text.split("\n");
+  let lineStart = 0;
+
+  return {
+    type: "doc",
+    content: lines.map((line) => {
+      const lineEnd = lineStart + line.length;
+      const runs = content.colorRuns.filter(
+        (run) => run.end > lineStart && run.start < lineEnd,
+      );
+      const points = new Set([0, line.length]);
+      for (const run of runs) {
+        points.add(Math.max(0, run.start - lineStart));
+        points.add(Math.min(line.length, run.end - lineStart));
+      }
+      const boundaries = [...points].sort((left, right) => left - right);
+      const nodes: RichTextNode[] = [];
+      for (let index = 0; index < boundaries.length - 1; index += 1) {
+        const start = boundaries[index];
+        const end = boundaries[index + 1];
+        if (start === undefined || end === undefined || start === end) continue;
+        const color = runs.find(
+          (run) =>
+            run.start <= lineStart + start && run.end >= lineStart + end,
+        )?.color;
+        nodes.push({
+          type: "text",
+          text: line.slice(start, end),
+          ...(color
+            ? { marks: [{ type: "textStyle", attrs: { color } }] }
+            : {}),
+        });
+      }
+      lineStart = lineEnd + 1;
+      return nodes.length > 0
+        ? { type: "paragraph", content: nodes }
+        : { type: "paragraph" };
+    }),
+  };
+}
+
+export function documentToContent(document: RichTextNode): TextContent {
+  let text = "";
+  const colorRuns: TextColorRun[] = [];
+  for (const [index, paragraph] of (document.content ?? []).entries()) {
+    if (index > 0) text += "\n";
+    for (const node of paragraph.content ?? []) {
+      if (!node.text) continue;
+      const start = text.length;
+      text += node.text;
+      const color = node.marks?.find((mark) => mark.type === "textStyle")
+        ?.attrs?.color;
+      if (color) colorRuns.push({ start, end: text.length, color });
+    }
+  }
+  const merged = mergeColorRuns(colorRuns);
+  const colorRunsAcrossLines: TextColorRun[] = [];
+  for (const run of merged) {
+    const previous = colorRunsAcrossLines.at(-1);
+    if (
+      previous &&
+      previous.color === run.color &&
+      text.slice(previous.end, run.start) === "\n"
+    ) {
+      previous.end = run.end;
+    } else {
+      colorRunsAcrossLines.push({ ...run });
+    }
+  }
+  return { text, colorRuns: colorRunsAcrossLines };
+}
+
+function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
+  const merged: TextColorRun[] = [];
+  for (const run of [...runs].sort((left, right) => left.start - right.start)) {
+    if (run.end <= run.start) continue;
+    const previous = merged.at(-1);
+    if (previous && previous.end === run.start && previous.color === run.color) {
+      previous.end = run.end;
+    } else {
+      merged.push({ ...run });
+    }
+  }
+  return merged;
+}
+
+function normalizeTextRange(
+  textLength: number,
+  selectionStart: number,
+  selectionEnd: number,
+): [start: number, end: number] {
+  return [
+    clamp(Math.min(selectionStart, selectionEnd), 0, textLength),
+    clamp(Math.max(selectionStart, selectionEnd), 0, textLength),
+  ];
+}
+
+export function colorTextRange(
+  content: TextContent,
+  selectionStart: number,
+  selectionEnd: number,
+  color: string,
+): TextContent {
+  const [start, end] = normalizeTextRange(
+    content.text.length,
+    selectionStart,
+    selectionEnd,
+  );
+  if (start === end) return content;
+
+  const colorRuns = content.colorRuns.flatMap((run) => {
+    if (run.end <= start || run.start >= end) return [run];
+    const remaining: TextColorRun[] = [];
+    if (run.start < start) remaining.push({ ...run, end: start });
+    if (run.end > end) remaining.push({ ...run, start: end });
+    return remaining;
+  });
+  colorRuns.push({ start, end, color: color.toLowerCase() });
+
+  return { ...content, colorRuns: mergeColorRuns(colorRuns) };
+}
+
+export function replaceTextRange(
+  content: TextContent,
+  selectionStart: number,
+  selectionEnd: number,
+  rawText: string,
+): TextContent {
+  const [start, end] = normalizeTextRange(
+    content.text.length,
+    selectionStart,
+    selectionEnd,
+  );
+  const replacement = parseColoredText(rawText);
+  const replacementEnd = start + replacement.text.length;
+  const offset = replacement.text.length - (end - start);
+  const colorRuns = content.colorRuns.flatMap((run) => {
+    if (run.end <= start) return [run];
+    if (run.start >= end) {
+      return [{ ...run, start: run.start + offset, end: run.end + offset }];
+    }
+
+    const remaining: TextColorRun[] = [];
+    if (run.start < start) remaining.push({ ...run, end: start });
+    if (run.end > end) {
+      remaining.push({
+        ...run,
+        start: replacementEnd,
+        end: run.end + offset,
+      });
+    }
+    return remaining;
+  });
+
+  if (replacement.colorRuns.length > 0) {
+    colorRuns.push(
+      ...replacement.colorRuns.map((run) => ({
+        ...run,
+        start: run.start + start,
+        end: run.end + start,
+      })),
+    );
+  } else if (replacement.text.length > 0) {
+    const inherited = content.colorRuns.find(
+      (run) => run.start <= start && run.end >= start,
+    );
+    if (inherited) {
+      colorRuns.push({
+        start,
+        end: replacementEnd,
+        color: inherited.color,
+      });
+    }
+  }
+
+  return {
+    text:
+      content.text.slice(0, start) +
+      replacement.text +
+      content.text.slice(end),
+    colorRuns: mergeColorRuns(colorRuns),
+  };
+}
+
 export type TextLayer = {
   id: string;
   kind: "text";
   name: string;
   text: string;
+  colorRuns: TextColorRun[];
   x: number;
   y: number;
   fontFamily: string;
@@ -58,6 +323,7 @@ export type TextLayerEdit = Partial<
   Pick<
     TextLayer,
     | "text"
+    | "colorRuns"
     | "fontFamily"
     | "fontSize"
     | "bold"
@@ -81,6 +347,53 @@ export type Project = Snapshot & {
   past: Snapshot[];
   future: Snapshot[];
 };
+
+export function parseColoredText(rawText: string): TextContent {
+  const colorCode = /!?\{#?([0-9a-f]{6}|[0-9a-f]{3})\}/gi;
+  const colorRuns: TextColorRun[] = [];
+  let text = "";
+  let sourceIndex = 0;
+  let activeColor: string | undefined;
+
+  for (const match of rawText.matchAll(colorCode)) {
+    const segment = rawText.slice(sourceIndex, match.index);
+    const start = text.length;
+    text += segment;
+    if (activeColor && segment.length > 0) {
+      colorRuns.push({ start, end: text.length, color: activeColor });
+    }
+    const hex = match[1].toLowerCase();
+    activeColor = `#${
+      hex.length === 3
+        ? [...hex].map((character) => character.repeat(2)).join("")
+        : hex
+    }`;
+    sourceIndex = match.index + match[0].length;
+  }
+
+  const tail = rawText.slice(sourceIndex);
+  const start = text.length;
+  text += tail;
+  if (activeColor && tail.length > 0) {
+    colorRuns.push({ start, end: text.length, color: activeColor });
+  }
+
+  let lineStart = 0;
+  for (const line of text.split("\n")) {
+    const lineEnd = lineStart + line.length;
+    const hasExplicitColor = colorRuns.some(
+      (run) => run.start < lineEnd && run.end > lineStart,
+    );
+    if (!hasExplicitColor && line.length > 0) {
+      const color = inferredLineColor(line);
+      if (color) colorRuns.push({ start: lineStart, end: lineEnd, color });
+    }
+    lineStart = lineEnd + 1;
+  }
+
+  colorRuns.sort((left, right) => left.start - right.start);
+  return { text, colorRuns };
+}
 
 export function supportedImageFormat(
   fileName: string,
@@ -187,14 +500,19 @@ export function addImageLayer(
   });
 }
 
-export function addTextLayer(project: Project, id: string): Project {
+export function addTextLayer(
+  project: Project,
+  id: string,
+  position: { x: number; y: number } = { x: 32, y: 32 },
+): Project {
   const layer: TextLayer = {
     id,
     kind: "text",
     name: "Text",
     text: "Text",
-    x: 32,
-    y: 32,
+    colorRuns: [],
+    x: position.x,
+    y: position.y,
     fontFamily: "Arial",
     fontSize: 24,
     bold: false,
@@ -221,6 +539,22 @@ export function editTextLayer(
     );
     return changed ? { ...layer, ...changes } : layer;
   });
+}
+
+export function resizeTextLayer(
+  project: Project,
+  layerId: string,
+  x: number,
+  wrapWidth: number,
+): Project {
+  let changed = false;
+  const layers = project.layers.map((layer) => {
+    if (layer.id !== layerId || layer.kind !== "text") return layer;
+    if (layer.x === x && layer.wrapWidth === wrapWidth) return layer;
+    changed = true;
+    return { ...layer, x, wrapWidth };
+  });
+  return changed ? commit(project, { ...snapshot(project), layers }) : project;
 }
 
 export function moveLayer(

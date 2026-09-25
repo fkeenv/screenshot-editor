@@ -180,6 +180,61 @@ button:disabled {
   width: 130px;
 }
 
+.composer {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  padding: 4px;
+  background: #1c1c1f;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+}
+
+.composer .text-controls {
+  gap: 2px;
+  align-items: center;
+}
+
+.composer button,
+.composer select,
+.composer input:not([type="color"]) {
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.composer button:hover:not(:disabled),
+.composer select:hover,
+.composer input:not([type="color"]):hover {
+  background: #3f3f46;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: #3f3f46;
+}
+
+.text-layer .ProseMirror {
+  min-height: 1lh;
+  outline: none;
+  white-space: pre-wrap;
+  cursor: text;
+}
+
+.text-layer .ProseMirror p {
+  margin: 0;
+}
+
+.viewport.placing-text,
+.viewport.placing-text .canvas,
+.viewport.placing-text .canvas-layer {
+  cursor: crosshair;
+}
+
 .text-controls {
   display: flex;
   flex: 1;
@@ -188,10 +243,31 @@ button:disabled {
   align-items: end;
 }
 
+.selection-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: end;
+}
+
+.color-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--preset);
+}
+
+.composer .color-input,
 .tool-panel .color-input {
-  width: 48px;
-  height: 32px;
-  padding: 3px;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
 }
 
 button.active-control {
@@ -260,33 +336,90 @@ button.active-control {
   overflow-wrap: anywhere;
   paint-order: stroke fill;
   white-space: pre-wrap;
+  outline: 1px dashed #a1a1aa;
+}
+
+.canvas-layer.text-layer.selected {
+  outline: 1px dashed #a1a1aa;
+}
+
+.text-resize-handle {
+  position: absolute;
+  z-index: 2;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 1px solid #60a5fa;
+  border-radius: 1px;
+}
+
+.text-resize-handle.nw {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.text-resize-handle.ne {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.text-resize-handle.sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+.text-resize-handle.se {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
 }
 
 .text-layer.editing {
   cursor: move;
 }
 
-.inline-text-editor {
-  display: block;
+.inline-text-editor-shell {
+  position: relative;
+  display: grid;
   width: 100%;
   min-height: 1lh;
+}
+
+.inline-text-preview,
+.inline-text-editor {
+  grid-area: 1 / 1;
+  width: 100%;
+  min-height: 1lh;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inline-text-preview {
+  pointer-events: none;
+}
+
+.inline-text-editor {
+  display: block;
   padding: 0;
   overflow: hidden;
-  color: inherit;
+  color: transparent;
   font: inherit;
   font-weight: inherit;
   line-height: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
   background: transparent;
   border: 0;
   outline: 0;
   resize: none;
   cursor: text;
+  caret-color: #fff;
   touch-action: auto;
   user-select: text;
-  -webkit-text-stroke: inherit;
-  paint-order: inherit;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0;
 }
 
 .canvas-size {

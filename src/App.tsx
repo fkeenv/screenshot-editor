@@ -3,9 +3,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type FocusEvent,
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
 } from "react";
 import {
@@ -20,18 +18,26 @@ import {
   openProject,
   previewImageScale,
   redo,
+  resizeTextLayer,
   scaleImageLayer,
   setCanvasSize,
   setView,
   SUPPORTED_IMAGE_ACCEPT,
   supportedImageFormat,
+  TEXT_COLOR_PRESETS,
   undo,
   type ImageLayer,
   type Layer,
   type Project,
+  type TextContent,
   type TextLayer,
   type TextLayerEdit,
 } from "./editor";
+import {
+  ColoredText,
+  InlineTextEditor,
+  type TextEditorHandle,
+} from "./InlineTextEditor";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -217,10 +223,20 @@ function ScaleControls({
 function TextControls({
   layer,
   onEdit,
+  canColorSelection,
+  onApplyColor,
+  onBeginColorInteraction,
+  onRefocusEditor,
 }: {
   layer: TextLayer;
   onEdit: (changes: TextLayerEdit) => void;
+  canColorSelection: boolean;
+  onApplyColor: (color: string) => void;
+  onBeginColorInteraction: () => void;
+  onRefocusEditor: () => void;
 }) {
+  const [customColor, setCustomColor] = useState("#ffffff");
+
   function editNumber(
     property:
       | "fontSize"
@@ -235,7 +251,7 @@ function TextControls({
   }
 
   return (
-    <div className="text-controls">
+    <div className="text-controls" role="toolbar" aria-label="Text formatting">
       <label>
         Font
         <select
@@ -262,8 +278,9 @@ function TextControls({
         aria-pressed={layer.bold}
         onClick={() => onEdit({ bold: !layer.bold })}
       >
-        Bold
+        B
       </button>
+      <span className="toolbar-divider" />
       <label>
         Outline
         <input
@@ -286,7 +303,7 @@ function TextControls({
         />
       </label>
       <label>
-        Line spacing
+        Spacing
         <input
           type="number"
           min="0.5"
@@ -298,7 +315,7 @@ function TextControls({
         />
       </label>
       <label>
-        Wrap width
+        Width
         <input
           type="number"
           min="1"
@@ -306,65 +323,41 @@ function TextControls({
           onChange={(event) => editNumber("wrapWidth", event.target.value, 1)}
         />
       </label>
+      <span className="toolbar-divider" />
+      <div className="selection-colors" aria-label="Selection colors">
+        {Object.entries(TEXT_COLOR_PRESETS).map(([preset, presetDetails]) => (
+          <button
+            type="button"
+            className="color-preset"
+            data-text-color-control
+            disabled={!canColorSelection}
+            key={preset}
+            style={{ ["--preset" as string]: presetDetails.color }}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => onApplyColor(presetDetails.color)}
+          >
+            <span className="color-swatch" />
+            {presetDetails.label}
+          </button>
+        ))}
+        <label>
+          Custom
+          <input
+            className="color-input"
+            data-text-color-control
+            type="color"
+            value={customColor}
+            disabled={!canColorSelection}
+            onPointerDown={onBeginColorInteraction}
+            onChange={(event) => {
+              setCustomColor(event.target.value);
+              onApplyColor(event.target.value);
+            }}
+            onBlur={onRefocusEditor}
+          />
+        </label>
+      </div>
     </div>
-  );
-}
-
-function InlineTextEditor({
-  layer,
-  selectText,
-  onCommit,
-  onCancel,
-}: {
-  layer: TextLayer;
-  selectText: boolean;
-  onCommit: (text: string) => void;
-  onCancel: () => void;
-}) {
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const cancelEdit = useRef(false);
-
-  function resize(element: HTMLTextAreaElement) {
-    element.style.height = "0";
-    element.style.height = `${element.scrollHeight}px`;
-  }
-
-  useEffect(() => {
-    const element = textarea.current;
-    if (!element) return;
-    resize(element);
-    element.focus();
-    if (selectText) element.select();
-  }, [selectText]);
-
-  function finishEditing(event: FocusEvent<HTMLTextAreaElement>) {
-    if (cancelEdit.current) {
-      onCancel();
-      return;
-    }
-    onCommit(event.currentTarget.value);
-  }
-
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    event.stopPropagation();
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    cancelEdit.current = true;
-    event.currentTarget.blur();
-  }
-
-  return (
-    <textarea
-      ref={textarea}
-      className="inline-text-editor"
-      aria-label={`Edit ${layer.name}`}
-      defaultValue={layer.text}
-      spellCheck
-      onInput={(event) => resize(event.currentTarget)}
-      onBlur={finishEditing}
-      onKeyDown={handleKeyDown}
-      onPointerDown={(event) => event.stopPropagation()}
-    />
   );
 }
 
@@ -377,6 +370,10 @@ export function App() {
   const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
+  const [hasTextSelection, setHasTextSelection] = useState(false);
+  const [placingText, setPlacingText] = useState(false);
+  const textEditor = useRef<TextEditorHandle | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
   );
@@ -437,34 +434,112 @@ export function App() {
     }
   }
 
-  function addTextBox() {
+  function placeTextBox(event: { clientX: number; clientY: number }) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const border = Number.parseFloat(getComputedStyle(canvas).borderLeftWidth) || 0;
+    const x = (event.clientX - rect.left - border) / project.zoom;
+    const y = (event.clientY - rect.top - border) / project.zoom;
+    if (x < 0 || y < 0 || x > project.canvasWidth || y > project.canvasHeight) {
+      return;
+    }
+
     const id = crypto.randomUUID();
-    setProject((current) => addTextLayer(current, id));
+    setProject((current) => addTextLayer(current, id, { x, y }));
     setSelectedLayerId(id);
     setEditingTextLayerId(id);
     setSelectTextOnEdit(true);
+    setHasTextSelection(false);
+    setPlacingText(false);
     setActiveMenu("Text");
+  }
+
+  function resizeTextBox(
+    event: PointerEvent<HTMLSpanElement>,
+    layer: TextLayer,
+    corner: "nw" | "ne" | "sw" | "se",
+  ) {
+    event.stopPropagation();
+    event.preventDefault();
+    const handle = event.currentTarget;
+    const startX = event.clientX;
+    const originWidth = layer.wrapWidth;
+    const originX = layer.x;
+    const zoom = project.zoom;
+    const fromLeft = corner === "nw" || corner === "sw";
+    let width = originWidth;
+    let x = originX;
+    handle.setPointerCapture(event.pointerId);
+
+    function measure(clientX: number) {
+      const dx = (clientX - startX) / zoom;
+      width = Math.max(40, Math.round(originWidth + (fromLeft ? -dx : dx)));
+      x = fromLeft ? originX + originWidth - width : originX;
+    }
+
+    function preview(clientX: number) {
+      measure(clientX);
+      setProject((current) => ({
+        ...current,
+        layers: current.layers.map((item) =>
+          item.id === layer.id && item.kind === "text"
+            ? { ...item, x, wrapWidth: width }
+            : item,
+        ),
+      }));
+    }
+
+    function onMove(move: globalThis.PointerEvent) {
+      if (move.buttons === 0) return;
+      preview(move.clientX);
+    }
+
+    function onUp(up: globalThis.PointerEvent) {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      if (up.type !== "pointercancel") measure(up.clientX);
+      setProject((current) => {
+        const restored = {
+          ...current,
+          layers: current.layers.map((item) =>
+            item.id === layer.id && item.kind === "text"
+              ? { ...item, x: originX, wrapWidth: originWidth }
+              : item,
+          ),
+        };
+        return resizeTextLayer(restored, layer.id, x, width);
+      });
+    }
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
   }
 
   function beginTextEditing(layerId: string) {
     setSelectedLayerId(layerId);
     setEditingTextLayerId(layerId);
-    setSelectTextOnEdit(false);
+    setSelectTextOnEdit(true);
     setActiveMenu("Text");
   }
 
-  function finishTextEditing(layerId: string, text: string) {
-    setProject((current) => editTextLayer(current, layerId, { text }));
+  function finishTextEditing(layerId: string, content: TextContent) {
+    setProject((current) => editTextLayer(current, layerId, content));
     setEditingTextLayerId(undefined);
     setSelectTextOnEdit(false);
+    setHasTextSelection(false);
   }
 
   function cancelTextEditing() {
     setEditingTextLayerId(undefined);
     setSelectTextOnEdit(false);
+    setHasTextSelection(false);
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (placingText) return;
     const viewport = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -508,6 +583,10 @@ export function App() {
     layer: Layer,
   ) {
     event.stopPropagation();
+    if (placingText) {
+      placeTextBox(event);
+      return;
+    }
     if (layer.kind === "text" && editingTextLayerId === layer.id) {
       event.preventDefault();
     }
@@ -589,6 +668,11 @@ export function App() {
       ) {
         event.preventDefault();
         setProject((current) => (event.shiftKey ? redo(current) : undo(current)));
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setPlacingText(false);
         return;
       }
 
@@ -775,28 +859,42 @@ export function App() {
           {activeMenu === "Text" ? (
             <>
               <div className="control-group">
-                <button type="button" onClick={addTextBox}>
+                <button
+                  type="button"
+                  aria-pressed={placingText}
+                  className={placingText ? "active-control" : ""}
+                  onClick={() => setPlacingText((current) => !current)}
+                >
                   Add text box
                 </button>
-                <span className="tool-hint">
-                  Double-click text to edit it. Drag or use arrow keys to move it.
-                </span>
               </div>
               {selectedTextLayer ? (
-                <>
-                  <div className="tool-divider" />
+                <div className="composer">
                   <TextControls
                     layer={selectedTextLayer}
+                    canColorSelection={
+                      editingTextLayerId === selectedTextLayer.id &&
+                      hasTextSelection
+                    }
+                    onApplyColor={(color) =>
+                      textEditor.current?.applyColor(color)
+                    }
+                    onBeginColorInteraction={() =>
+                      textEditor.current?.preserveOnBlur()
+                    }
+                    onRefocusEditor={() => textEditor.current?.focus()}
                     onEdit={(changes) =>
                       setProject((current) =>
                         editTextLayer(current, selectedTextLayer.id, changes),
                       )
                     }
                   />
-                </>
+                </div>
               ) : (
                 <span className="tool-hint">
-                  Add or select a text box to edit it.
+                  {placingText
+                    ? "Click the canvas to place the text box."
+                    : "Add a text box, then edit it here."}
                 </span>
               )}
             </>
@@ -818,9 +916,18 @@ export function App() {
         </div>
       </header>
 
-      <div className="viewport" onPointerDown={onViewportPointerDown}>
+      <div
+        className={`viewport${placingText ? " placing-text" : ""}`}
+        onPointerDown={onViewportPointerDown}
+      >
         <div
           className="canvas"
+          ref={canvasRef}
+          onPointerDown={(event) => {
+            if (!placingText) return;
+            event.stopPropagation();
+            placeTextBox(event);
+          }}
           style={{
             width: project.canvasWidth,
             height: project.canvasHeight,
@@ -895,15 +1002,41 @@ export function App() {
                   beginTextEditing(layer.id);
                 }}
               >
+                {selectedLayerId === layer.id
+                  ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
+                      <span
+                        key={corner}
+                        className={`text-resize-handle ${corner}`}
+                        onPointerDown={(event) => resizeTextBox(event, layer, corner)}
+                      />
+                    ))
+                  : null}
                 {editingTextLayerId === layer.id ? (
                   <InlineTextEditor
                     layer={layer}
                     selectText={selectTextOnEdit}
-                    onCommit={(text) => finishTextEditing(layer.id, text)}
+                    editorHandle={textEditor}
+                    onSelectionChange={setHasTextSelection}
+                    onColorCommit={(previous, next) =>
+                      setProject((current) => {
+                        const withPendingText = editTextLayer(
+                          current,
+                          layer.id,
+                          previous,
+                        );
+                        return editTextLayer(withPendingText, layer.id, next);
+                      })
+                    }
+                    onHistory={(shouldRedo) =>
+                      setProject((current) =>
+                        shouldRedo ? redo(current) : undo(current),
+                      )
+                    }
+                    onCommit={(content) => finishTextEditing(layer.id, content)}
                     onCancel={cancelTextEditing}
                   />
                 ) : (
-                  layer.text
+                  <ColoredText text={layer.text} colorRuns={layer.colorRuns} />
                 )}
               </div>
             ),
