@@ -70,7 +70,10 @@ function inferredLineColor(line: string): string | undefined {
   const characterName =
     "(?:[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*|Mask(?:_[\\p{L}\\p{N}]+)+)";
   const rules: [RegExp, string][] = [
-    [/^\*\s.+\(\(\s*.+?\s*\)\)\*?$/u, TEXT_COLOR_PRESETS.do.color],
+    [
+      /^\*\s.+\(\(\s*.+?\s*\)\)\*?$/u,
+      TEXT_COLOR_PRESETS.do.color,
+    ],
     [/^(?:\*|>)\s+/u, TEXT_COLOR_PRESETS.me.color],
     [
       /^(?:You paid \$|.+ paid you \$|You have (?:given|shown) .+\byour\b)/iu,
@@ -97,12 +100,12 @@ function inferredLineColor(line: string): string | undefined {
       /(?:\bsays \((?:cell)?phone\):|\bsays on the phone\b|^\(Phone - Loudspeaker\))/iu,
       TEXT_COLOR_PRESETS.phone.color,
     ],
-    [/\bshouts(?: \(to .+?\))?:/iu, TEXT_COLOR_PRESETS.say.color],
-    [/\bsays(?: \(to .+?\))?(?::|\s)/iu, TEXT_COLOR_PRESETS.say.color],
     [
-      new RegExp(`^(?:\\* )?${characterName} `, "u"),
-      TEXT_COLOR_PRESETS.me.color,
+      /\bshouts(?: \(to .+?\))?:/iu,
+      TEXT_COLOR_PRESETS.say.color,
     ],
+    [/\bsays(?: \(to .+?\))?(?::|\s)/iu, TEXT_COLOR_PRESETS.say.color],
+    [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me.color],
   ];
   return rules.find(([pattern]) => pattern.test(message))?.[1];
 }
@@ -137,7 +140,8 @@ export function contentToDocument(content: TextContent): RichTextNode {
         const end = boundaries[index + 1];
         if (start === undefined || end === undefined || start === end) continue;
         const color = runs.find(
-          (run) => run.start <= lineStart + start && run.end >= lineStart + end,
+          (run) =>
+            run.start <= lineStart + start && run.end >= lineStart + end,
         )?.color;
         nodes.push({
           type: "text",
@@ -164,8 +168,8 @@ export function documentToContent(document: RichTextNode): TextContent {
       if (!node.text) continue;
       const start = text.length;
       text += node.text;
-      const color = node.marks?.find((mark) => mark.type === "textStyle")?.attrs
-        ?.color;
+      const color = node.marks?.find((mark) => mark.type === "textStyle")
+        ?.attrs?.color;
       if (color) colorRuns.push({ start, end: text.length, color });
     }
   }
@@ -191,11 +195,7 @@ function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
   for (const run of [...runs].sort((left, right) => left.start - right.start)) {
     if (run.end <= run.start) continue;
     const previous = merged.at(-1);
-    if (
-      previous &&
-      previous.end === run.start &&
-      previous.color === run.color
-    ) {
+    if (previous && previous.end === run.start && previous.color === run.color) {
       previous.end = run.end;
     } else {
       merged.push({ ...run });
@@ -295,7 +295,9 @@ export function replaceTextRange(
 
   return {
     text:
-      content.text.slice(0, start) + replacement.text + content.text.slice(end),
+      content.text.slice(0, start) +
+      replacement.text +
+      content.text.slice(end),
     colorRuns: mergeColorRuns(colorRuns),
   };
 }
@@ -431,17 +433,17 @@ function commit(project: Project, next: Snapshot): Project {
   };
 }
 
-function updateLayer<K extends Layer["kind"]>(
+function updateMatchingLayer(
   project: Project,
   layerId: string,
-  kind: K,
-  update: (layer: Extract<Layer, { kind: K }>) => Layer,
+  matches: (layer: Layer) => boolean,
+  update: (layer: Layer) => Layer,
   recordHistory = true,
 ): Project {
   let changed = false;
   const layers = project.layers.map((layer) => {
-    if (layer.id !== layerId || layer.kind !== kind) return layer;
-    const next = update(layer as Extract<Layer, { kind: K }>);
+    if (layer.id !== layerId || !matches(layer)) return layer;
+    const next = update(layer);
     changed = changed || next !== layer;
     return next;
   });
@@ -451,6 +453,22 @@ function updateLayer<K extends Layer["kind"]>(
   return recordHistory
     ? commit(project, { ...snapshot(project), layers })
     : { ...project, layers };
+}
+
+function updateLayer<K extends Layer["kind"]>(
+  project: Project,
+  layerId: string,
+  kind: K,
+  update: (layer: Extract<Layer, { kind: K }>) => Layer,
+  recordHistory = true,
+): Project {
+  return updateMatchingLayer(
+    project,
+    layerId,
+    (layer) => layer.kind === kind,
+    (layer) => update(layer as Extract<Layer, { kind: K }>),
+    recordHistory,
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -627,18 +645,22 @@ export function setLayerOpacity(
   layerId: string,
   opacity: number,
 ): Project {
-  const normalizedOpacity = clamp(opacity, 0, 1);
-  return updateAnyLayer(project, layerId, (layer) =>
-    layer.opacity === normalizedOpacity
-      ? layer
-      : { ...layer, opacity: normalizedOpacity },
-  );
+  return updateLayerOpacity(project, layerId, opacity, true);
 }
 
 export function previewLayerOpacity(
   project: Project,
   layerId: string,
   opacity: number,
+): Project {
+  return updateLayerOpacity(project, layerId, opacity, false);
+}
+
+function updateLayerOpacity(
+  project: Project,
+  layerId: string,
+  opacity: number,
+  recordHistory: boolean,
 ): Project {
   const normalizedOpacity = clamp(opacity, 0, 1);
   return updateAnyLayer(
@@ -648,7 +670,7 @@ export function previewLayerOpacity(
       layer.opacity === normalizedOpacity
         ? layer
         : { ...layer, opacity: normalizedOpacity },
-    false,
+    recordHistory,
   );
 }
 
@@ -674,17 +696,13 @@ function updateAnyLayer(
   update: (layer: Layer) => Layer,
   recordHistory = true,
 ): Project {
-  let changed = false;
-  const layers = project.layers.map((layer) => {
-    if (layer.id !== layerId) return layer;
-    const next = update(layer);
-    changed = next !== layer;
-    return next;
-  });
-  if (!changed) return project;
-  return recordHistory
-    ? commit(project, { ...snapshot(project), layers })
-    : { ...project, layers };
+  return updateMatchingLayer(
+    project,
+    layerId,
+    () => true,
+    update,
+    recordHistory,
+  );
 }
 
 export function nudgeLayer(

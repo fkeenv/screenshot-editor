@@ -302,7 +302,9 @@ test("pasted chat lines recognize character actions and regular speech", () => {
 test("regular speech recognition does not require a colon after says", () => {
   const content = parseColoredText('John Smith says "Hello."');
 
-  expect(content.colorRuns).toEqual([{ start: 0, end: 24, color: "#f1f1f1" }]);
+  expect(content.colorRuns).toEqual([
+    { start: 0, end: 24, color: "#f1f1f1" },
+  ]);
 });
 
 test("GTA World presets use the documented chat colors", () => {
@@ -409,7 +411,12 @@ test("colored chat lines round-trip through the rich text document", () => {
 test("replacing selected text keeps surrounding colors and parses pasted codes", () => {
   const content = parseColoredText("John Smith says: Hello.");
 
-  const replaced = replaceTextRange(content, 17, 22, "{c2a3da}waves");
+  const replaced = replaceTextRange(
+    content,
+    17,
+    22,
+    "{c2a3da}waves",
+  );
 
   expect(replaced).toEqual({
     text: "John Smith says: waves.",

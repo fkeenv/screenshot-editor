@@ -13,15 +13,19 @@ import {
 import { useRef } from "react";
 import type { Layer } from "./editor";
 
+export type LayerActions = {
+  select: (layerId: string) => void;
+  reorder: (layerId: string, targetIndex: number) => void;
+  rename: (layerId: string, name: string) => void;
+  setVisibility: (layerId: string, visible: boolean) => void;
+  previewOpacity: (layerId: string, opacity: number) => void;
+  commitOpacity: (layerId: string, previousOpacity: number) => void;
+};
+
 type LayersPanelProps = {
   layers: Layer[];
   selectedLayerId?: string;
-  onSelect: (layerId: string) => void;
-  onReorder: (layerId: string, targetIndex: number) => void;
-  onRename: (layerId: string, name: string) => void;
-  onVisibilityChange: (layerId: string, visible: boolean) => void;
-  onOpacityPreview: (layerId: string, opacity: number) => void;
-  onOpacityCommit: (layerId: string, previousOpacity: number) => void;
+  actions: LayerActions;
 };
 
 type LayerRowProps = Omit<LayersPanelProps, "layers"> & {
@@ -35,12 +39,7 @@ function LayerRow({
   index,
   layerCount,
   selectedLayerId,
-  onSelect,
-  onReorder,
-  onRename,
-  onVisibilityChange,
-  onOpacityPreview,
-  onOpacityCommit,
+  actions,
 }: LayerRowProps) {
   const opacityStart = useRef<number | undefined>(undefined);
 
@@ -52,7 +51,7 @@ function LayerRow({
     const previousOpacity = opacityStart.current;
     opacityStart.current = undefined;
     if (previousOpacity !== undefined) {
-      onOpacityCommit(layer.id, previousOpacity);
+      actions.commitOpacity(layer.id, previousOpacity);
     }
   }
 
@@ -68,7 +67,7 @@ function LayerRow({
             ? "var(--mantine-primary-color-filled)"
             : undefined,
       }}
-      onClick={() => onSelect(layer.id)}
+      onClick={() => actions.select(layer.id)}
     >
       <Stack gap={8}>
         <Group gap={6} wrap="nowrap">
@@ -80,7 +79,7 @@ function LayerRow({
             title={layer.visible ? "Hide layer" : "Show layer"}
             onClick={(event) => {
               event.stopPropagation();
-              onVisibilityChange(layer.id, !layer.visible);
+              actions.setVisibility(layer.id, !layer.visible);
             }}
           >
             {layer.visible ? "◉" : "○"}
@@ -91,11 +90,11 @@ function LayerRow({
             aria-label={`Name for ${layer.name}`}
             size="xs"
             style={{ flex: 1 }}
-            onFocus={() => onSelect(layer.id)}
+            onFocus={() => actions.select(layer.id)}
             onBlur={(event) => {
               const name = event.currentTarget.value.trim();
               if (name && name !== layer.name) {
-                onRename(layer.id, name);
+                actions.rename(layer.id, name);
               } else if (!name) {
                 event.currentTarget.value = layer.name;
               }
@@ -118,7 +117,7 @@ function LayerRow({
             disabled={index === layerCount - 1}
             onClick={(event) => {
               event.stopPropagation();
-              onReorder(layer.id, index + 1);
+              actions.reorder(layer.id, index + 1);
             }}
           >
             ↑
@@ -131,7 +130,7 @@ function LayerRow({
             disabled={index === 0}
             onClick={(event) => {
               event.stopPropagation();
-              onReorder(layer.id, index - 1);
+              actions.reorder(layer.id, index - 1);
             }}
           >
             ↓
@@ -139,22 +138,25 @@ function LayerRow({
           <Text c="dimmed" size="xs">
             Opacity
           </Text>
-          <Slider
-            min={0}
-            max={1}
-            step={0.01}
-            value={layer.opacity}
-            label={(value) => `${Math.round(value * 100)}%`}
-            aria-label={`Opacity for ${layer.name}`}
-            size="xs"
+          <Box
             style={{ flex: 1 }}
-            onClick={(event) => event.stopPropagation()}
-            onPointerDown={beginOpacityChange}
-            onKeyDown={beginOpacityChange}
-            onChange={(opacity) => onOpacityPreview(layer.id, opacity)}
-            onChangeEnd={finishOpacityChange}
-            onBlur={finishOpacityChange}
-          />
+            onPointerDownCapture={beginOpacityChange}
+            onKeyDownCapture={beginOpacityChange}
+            onBlurCapture={finishOpacityChange}
+          >
+            <Slider
+              min={0}
+              max={1}
+              step={0.01}
+              value={layer.opacity}
+              label={(value) => `${Math.round(value * 100)}%`}
+              aria-label={`Opacity for ${layer.name}`}
+              size="xs"
+              onClick={(event) => event.stopPropagation()}
+              onChange={(opacity) => actions.previewOpacity(layer.id, opacity)}
+              onChangeEnd={finishOpacityChange}
+            />
+          </Box>
           <Text size="xs" ta="right" w={34}>
             {Math.round(layer.opacity * 100)}%
           </Text>
@@ -167,12 +169,7 @@ function LayerRow({
 export function LayersPanel({
   layers,
   selectedLayerId,
-  onSelect,
-  onReorder,
-  onRename,
-  onVisibilityChange,
-  onOpacityPreview,
-  onOpacityCommit,
+  actions,
 }: LayersPanelProps) {
   return (
     <Box
@@ -213,12 +210,7 @@ export function LayersPanel({
                     index={index}
                     layerCount={layers.length}
                     selectedLayerId={selectedLayerId}
-                    onSelect={onSelect}
-                    onReorder={onReorder}
-                    onRename={onRename}
-                    onVisibilityChange={onVisibilityChange}
-                    onOpacityPreview={onOpacityPreview}
-                    onOpacityCommit={onOpacityCommit}
+                    actions={actions}
                   />
                 </Box>
               );
