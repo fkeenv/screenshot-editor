@@ -4,6 +4,8 @@ import {
   addTextLayer,
   cropImageLayer,
   colorTextRange,
+  contentToDocument,
+  documentToContent,
   editTextLayer,
   finishImageScale,
   fitImageLayerToCanvas,
@@ -13,6 +15,7 @@ import {
   parseColoredText,
   previewImageScale,
   redo,
+  resizeTextLayer,
   replaceTextRange,
   scaleImageLayer,
   setCanvasSize,
@@ -146,6 +149,16 @@ test("adding a text box creates a layer separate from the canvas", () => {
   ]);
   expect(project.canvasWidth).toBe(800);
   expect(project.canvasHeight).toBe(600);
+});
+
+test("a text box is placed where the canvas was clicked", () => {
+  const project = addTextLayer(openProject(), "text-1", { x: 180, y: 96 });
+  const layer = project.layers[0];
+
+  expect(layer?.kind).toBe("text");
+  if (layer?.kind !== "text") return;
+  expect(layer.x).toBe(180);
+  expect(layer.y).toBe(96);
 });
 
 test("pasted text and its drawing style are stored on the text layer", () => {
@@ -293,6 +306,16 @@ test("a manual color overrides an inferred color only within the selection", () 
   ]);
 });
 
+test("colored chat lines round-trip through the rich text document", () => {
+  const content = parseColoredText(
+    "{c2a3da}* John looks around.\nJohn says: Hello.",
+  );
+  const restored = documentToContent(contentToDocument(content));
+
+  expect(restored.text).toBe("* John looks around.\nJohn says: Hello.");
+  expect(restored.colorRuns).toEqual(content.colorRuns);
+});
+
 test("replacing selected text keeps surrounding colors and parses pasted codes", () => {
   const content = parseColoredText("John Smith says: Hello.");
 
@@ -332,6 +355,18 @@ test("dragging moves the image without moving or resizing the canvas", () => {
   expect(project.canvasHeight).toBe(600);
   expect(project.panX).toBe(0);
   expect(project.panY).toBe(0);
+});
+
+test("resizing a text box from the left changes its width and keeps the right edge", () => {
+  const added = addTextLayer(openProject(), "text-1", { x: 32, y: 32 });
+  const project = resizeTextLayer(added, "text-1", 12, 420);
+  const layer = project.layers[0];
+
+  expect(layer?.kind).toBe("text");
+  if (layer?.kind !== "text") return;
+  expect(layer.x).toBe(12);
+  expect(layer.wrapWidth).toBe(420);
+  expect(layer.x + layer.wrapWidth).toBe(432);
 });
 
 test("dragging and nudging move the text layer", () => {

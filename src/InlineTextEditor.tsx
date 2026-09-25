@@ -1,16 +1,11 @@
+import { Color, TextStyle } from "@tiptap/extension-text-style";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { useEffect, type MutableRefObject, type ReactNode } from "react";
 import {
-  useEffect,
-  useRef,
-  useState,
-  type ClipboardEvent,
-  type FocusEvent,
-  type KeyboardEvent,
-  type MutableRefObject,
-  type ReactNode,
-} from "react";
-import {
-  colorTextRange,
-  replaceTextRange,
+  contentToDocument,
+  documentToContent,
+  parseColoredText,
   type TextColorRun,
   type TextContent,
   type TextLayer,
@@ -50,7 +45,6 @@ export function InlineTextEditor({
   editorHandle,
   onSelectionChange,
   onColorCommit,
-  onHistory,
   onCommit,
   onCancel,
 }: {
@@ -63,84 +57,82 @@ export function InlineTextEditor({
   onCommit: (content: TextContent) => void;
   onCancel: () => void;
 }) {
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const cancelEdit = useRef(false);
-  const preserveOnBlur = useRef(false);
-  const selection = useRef({ start: 0, end: 0 });
-  const [content, setContent] = useState<TextContent>({
-    text: layer.text,
-    colorRuns: layer.colorRuns,
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        bold: false,
+        italic: false,
+        strike: false,
+        code: false,
+        codeBlock: false,
+        heading: false,
+        bulletList: false,
+        orderedList: false,
+        blockquote: false,
+        horizontalRule: false,
+      }),
+      TextStyle,
+      Color,
+    ],
+    content: contentToDocument({
+      text: layer.text,
+      colorRuns: layer.colorRuns,
+    }),
+    editorProps: {
+      attributes: { "aria-label": `Edit ${layer.name}` },
+      handlePaste: (_view, event) => {
+        const pasted = event.clipboardData?.getData("text/plain");
+        if (!pasted || !editor) return false;
+        const parsed = contentToDocument(parseColoredText(pasted));
+        editor.chain().focus().insertContent(parsed.content ?? []).run();
+        return true;
+      },
+    },
+    onSelectionUpdate: ({ editor: current }) => {
+      onSelectionChange(!current.state.selection.empty);
+    },
+    onBlur: ({ editor: current }) => {
+      onCommit(documentToContent(current.getJSON()));
+    },
   });
-  const contentRef = useRef(content);
 
-  function resize(element: HTMLTextAreaElement) {
-    element.style.height = "0";
-    element.style.height = `${element.scrollHeight}px`;
+  function commit() {
+    if (!editor) return;
+    onCommit(documentToContent(editor.getJSON()));
   }
 
-  function updateContent(next: TextContent) {
-    contentRef.current = next;
-    setContent(next);
-  }
-
-  function rememberSelection(element: HTMLTextAreaElement) {
-    selection.current = {
-      start: element.selectionStart,
-      end: element.selectionEnd,
-    };
-    onSelectionChange(element.selectionStart !== element.selectionEnd);
-  }
-
-  function restoreSelection() {
-    requestAnimationFrame(() => {
-      const element = textarea.current;
-      if (!element) return;
-      element.focus();
-      element.setSelectionRange(selection.current.start, selection.current.end);
-    });
-  }
-
-  function applyColor(color: string) {
-    const { start, end } = selection.current;
-    if (start === end) return;
-    const previous = contentRef.current;
-    const next = colorTextRange(previous, start, end, color);
-    updateContent(next);
-    onColorCommit(previous, next);
-    restoreSelection();
+  function reportSelection() {
+    if (!editor) return;
+    onSelectionChange(!editor.state.selection.empty);
   }
 
   useEffect(() => {
-    const element = textarea.current;
-    if (!element) return;
-    resize(element);
-    element.focus();
-    if (selectText) {
-      element.select();
-      rememberSelection(element);
-    }
-  }, [selectText]);
+    if (!editor) return;
+    editor.commands.focus();
+    if (selectText) editor.commands.selectAll();
+    reportSelection();
+  }, [editor, selectText]);
 
   useEffect(() => {
-    const element = textarea.current;
-    if (element) resize(element);
-  }, [content.text]);
-
-  useEffect(() => {
-    if (
-      layer.text !== contentRef.current.text ||
-      layer.colorRuns !== contentRef.current.colorRuns
-    ) {
-      updateContent({ text: layer.text, colorRuns: layer.colorRuns });
-    }
-  }, [layer.text, layer.colorRuns]);
+    if (!editor || editor.isFocused) return;
+    const current = documentToContent(editor.getJSON());
+    if (current.text === layer.text) return;
+    editor.commands.setContent(
+      contentToDocument({ text: layer.text, colorRuns: layer.colorRuns }),
+      { emitUpdate: false },
+    );
+  }, [editor, layer.text, layer.colorRuns]);
 
   editorHandle.current = {
-    applyColor,
-    focus: restoreSelection,
-    preserveOnBlur: () => {
-      preserveOnBlur.current = true;
+    applyColor: (color) => {
+      if (!editor || editor.state.selection.empty) return;
+      const previous = documentToContent(editor.getJSON());
+      editor.chain().focus().setColor(color).run();
+      const next = documentToContent(editor.getJSON());
+      onColorCommit(previous, next);
     },
+    focus: () => editor?.commands.focus(),
+    preserveOnBlur: () => undefined,
   };
 
   useEffect(() => {
@@ -150,104 +142,20 @@ export function InlineTextEditor({
     };
   }, [editorHandle, onSelectionChange]);
 
-  function finishEditing(event: FocusEvent<HTMLTextAreaElement>) {
-    if (preserveOnBlur.current) {
-      preserveOnBlur.current = false;
-      return;
-    }
-    if (
-      event.relatedTarget instanceof HTMLElement &&
-      event.relatedTarget.closest("[data-text-color-control]")
-    ) {
-      return;
-    }
-    if (cancelEdit.current) {
-      onCancel();
-      return;
-    }
-    onCommit(contentRef.current);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    event.stopPropagation();
-    if (
-      (event.metaKey || event.ctrlKey) &&
-      event.key.toLowerCase() === "z" &&
-      contentRef.current.text === layer.text
-    ) {
-      event.preventDefault();
-      onHistory(event.shiftKey);
-      return;
-    }
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    cancelEdit.current = true;
-    event.currentTarget.blur();
-  }
-
-  function changeText(nextText: string) {
-    const previous = contentRef.current.text;
-    let start = 0;
-    while (start < previous.length && previous[start] === nextText[start]) {
-      start += 1;
-    }
-    let previousEnd = previous.length;
-    let nextEnd = nextText.length;
-    while (
-      previousEnd > start &&
-      nextEnd > start &&
-      previous[previousEnd - 1] === nextText[nextEnd - 1]
-    ) {
-      previousEnd -= 1;
-      nextEnd -= 1;
-    }
-    updateContent(
-      replaceTextRange(
-        contentRef.current,
-        start,
-        previousEnd,
-        nextText.slice(start, nextEnd),
-      ),
-    );
-  }
-
-  function pasteText(event: ClipboardEvent<HTMLTextAreaElement>) {
-    event.preventDefault();
-    const element = event.currentTarget;
-    const start = element.selectionStart;
-    const end = element.selectionEnd;
-    const previousLength = contentRef.current.text.length;
-    const next = replaceTextRange(
-      contentRef.current,
-      start,
-      end,
-      event.clipboardData.getData("text/plain"),
-    );
-    const caret = start + next.text.length - (previousLength - (end - start));
-    selection.current = { start: caret, end: caret };
-    onSelectionChange(false);
-    updateContent(next);
-    restoreSelection();
-  }
-
   return (
-    <div className="inline-text-editor-shell">
-      <div className="inline-text-preview" aria-hidden="true">
-        <ColoredText text={content.text} colorRuns={content.colorRuns} />
-      </div>
-      <textarea
-        ref={textarea}
-        className="inline-text-editor"
-        aria-label={`Edit ${layer.name}`}
-        value={content.text}
-        spellCheck
-        onChange={(event) => changeText(event.target.value)}
-        onSelect={(event) => rememberSelection(event.currentTarget)}
-        onPaste={pasteText}
-        onBlur={finishEditing}
-        onKeyDown={handleKeyDown}
-        onPointerDown={(event) => event.stopPropagation()}
-      />
-    </div>
+    <EditorContent
+      editor={editor}
+      className="rich-text-surface"
+      onBlur={commit}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onMouseUp={reportSelection}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        onCancel();
+      }}
+    />
   );
 }

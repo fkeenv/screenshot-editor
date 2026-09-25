@@ -108,6 +108,86 @@ function inferredLineColor(line: string): string | undefined {
   return rules.find(([pattern]) => pattern.test(message))?.[1];
 }
 
+export type RichTextNode = {
+  type: string;
+  text?: string;
+  marks?: { type: string; attrs?: { color?: string | null } }[];
+  content?: RichTextNode[];
+};
+
+export function contentToDocument(content: TextContent): RichTextNode {
+  const lines = content.text.split("\n");
+  let lineStart = 0;
+
+  return {
+    type: "doc",
+    content: lines.map((line) => {
+      const lineEnd = lineStart + line.length;
+      const runs = content.colorRuns.filter(
+        (run) => run.end > lineStart && run.start < lineEnd,
+      );
+      const points = new Set([0, line.length]);
+      for (const run of runs) {
+        points.add(Math.max(0, run.start - lineStart));
+        points.add(Math.min(line.length, run.end - lineStart));
+      }
+      const boundaries = [...points].sort((left, right) => left - right);
+      const nodes: RichTextNode[] = [];
+      for (let index = 0; index < boundaries.length - 1; index += 1) {
+        const start = boundaries[index];
+        const end = boundaries[index + 1];
+        if (start === undefined || end === undefined || start === end) continue;
+        const color = runs.find(
+          (run) =>
+            run.start <= lineStart + start && run.end >= lineStart + end,
+        )?.color;
+        nodes.push({
+          type: "text",
+          text: line.slice(start, end),
+          ...(color
+            ? { marks: [{ type: "textStyle", attrs: { color } }] }
+            : {}),
+        });
+      }
+      lineStart = lineEnd + 1;
+      return nodes.length > 0
+        ? { type: "paragraph", content: nodes }
+        : { type: "paragraph" };
+    }),
+  };
+}
+
+export function documentToContent(document: RichTextNode): TextContent {
+  let text = "";
+  const colorRuns: TextColorRun[] = [];
+  for (const [index, paragraph] of (document.content ?? []).entries()) {
+    if (index > 0) text += "\n";
+    for (const node of paragraph.content ?? []) {
+      if (!node.text) continue;
+      const start = text.length;
+      text += node.text;
+      const color = node.marks?.find((mark) => mark.type === "textStyle")
+        ?.attrs?.color;
+      if (color) colorRuns.push({ start, end: text.length, color });
+    }
+  }
+  const merged = mergeColorRuns(colorRuns);
+  const colorRunsAcrossLines: TextColorRun[] = [];
+  for (const run of merged) {
+    const previous = colorRunsAcrossLines.at(-1);
+    if (
+      previous &&
+      previous.color === run.color &&
+      text.slice(previous.end, run.start) === "\n"
+    ) {
+      previous.end = run.end;
+    } else {
+      colorRunsAcrossLines.push({ ...run });
+    }
+  }
+  return { text, colorRuns: colorRunsAcrossLines };
+}
+
 function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
   const merged: TextColorRun[] = [];
   for (const run of [...runs].sort((left, right) => left.start - right.start)) {
@@ -420,15 +500,19 @@ export function addImageLayer(
   });
 }
 
-export function addTextLayer(project: Project, id: string): Project {
+export function addTextLayer(
+  project: Project,
+  id: string,
+  position: { x: number; y: number } = { x: 32, y: 32 },
+): Project {
   const layer: TextLayer = {
     id,
     kind: "text",
     name: "Text",
     text: "Text",
     colorRuns: [],
-    x: 32,
-    y: 32,
+    x: position.x,
+    y: position.y,
     fontFamily: "Arial",
     fontSize: 24,
     bold: false,
@@ -455,6 +539,22 @@ export function editTextLayer(
     );
     return changed ? { ...layer, ...changes } : layer;
   });
+}
+
+export function resizeTextLayer(
+  project: Project,
+  layerId: string,
+  x: number,
+  wrapWidth: number,
+): Project {
+  let changed = false;
+  const layers = project.layers.map((layer) => {
+    if (layer.id !== layerId || layer.kind !== "text") return layer;
+    if (layer.x === x && layer.wrapWidth === wrapWidth) return layer;
+    changed = true;
+    return { ...layer, x, wrapWidth };
+  });
+  return changed ? commit(project, { ...snapshot(project), layers }) : project;
 }
 
 export function moveLayer(
