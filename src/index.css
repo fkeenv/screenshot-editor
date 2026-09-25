@@ -167,7 +167,10 @@ button:disabled {
 }
 
 .tool-hint {
-  align-self: center;
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  align-self: flex-end;
   color: #a1a1aa;
   font-size: 12px;
 }
