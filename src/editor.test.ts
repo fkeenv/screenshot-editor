@@ -3,14 +3,17 @@ import {
   addImageLayer,
   addTextLayer,
   cropImageLayer,
+  colorTextRange,
   editTextLayer,
   finishImageScale,
   fitImageLayerToCanvas,
   moveLayer,
   nudgeLayer,
   openProject,
+  parseColoredText,
   previewImageScale,
   redo,
+  replaceTextRange,
   scaleImageLayer,
   setCanvasSize,
   setView,
@@ -128,6 +131,7 @@ test("adding a text box creates a layer separate from the canvas", () => {
       kind: "text",
       name: "Text",
       text: "Text",
+      colorRuns: [],
       x: 32,
       y: 32,
       fontFamily: "Arial",
@@ -166,6 +170,86 @@ test("pasted text and its drawing style are stored on the text layer", () => {
     outlineColor: "#ff00aa",
     lineSpacing: 1.5,
     wrapWidth: 240,
+  });
+});
+
+test("pasted SA-MP color codes color the following text and are not displayed", () => {
+  const content = parseColoredText("{c2a3da}* John looks around.");
+
+  expect(content).toEqual({
+    text: "* John looks around.",
+    colorRuns: [{ start: 0, end: 20, color: "#c2a3da" }],
+  });
+});
+
+test("pasted chat lines recognize character actions and regular speech", () => {
+  const content = parseColoredText(
+    "John Smith reaches for the door.\nJohn Smith says: Hello.",
+  );
+
+  expect(content.colorRuns).toEqual([
+    { start: 0, end: 32, color: "#c2a3da" },
+    { start: 33, end: 56, color: "#ffffff" },
+  ]);
+});
+
+test("regular speech recognition does not require a colon after says", () => {
+  const content = parseColoredText('John Smith says "Hello."');
+
+  expect(content.colorRuns).toEqual([
+    { start: 0, end: 24, color: "#ffffff" },
+  ]);
+});
+
+test("pasted chat lines recognize the supported SA-MP message types", () => {
+  const content = parseColoredText(
+    [
+      "* The door is open. ((John Smith))",
+      "John Smith says quietly: Stay close.",
+      "John Smith whispers: Do not move.",
+      "[Phone] John Smith says: Hello.",
+      "[Money] John Smith receives $500.",
+    ].join("\n"),
+  );
+
+  expect(content.colorRuns.map((run) => run.color)).toEqual([
+    "#800000",
+    "#d0d0d0",
+    "#ffff00",
+    "#ffff99",
+    "#33aa33",
+  ]);
+});
+
+test("a manual color overrides an inferred color only within the selection", () => {
+  const content = parseColoredText("John Smith says: Hello.");
+
+  const colored = colorTextRange(content, 17, 22, "#ff0000");
+
+  expect(colored.colorRuns).toEqual([
+    { start: 0, end: 17, color: "#ffffff" },
+    { start: 17, end: 22, color: "#ff0000" },
+    { start: 22, end: 23, color: "#ffffff" },
+  ]);
+});
+
+test("replacing selected text keeps surrounding colors and parses pasted codes", () => {
+  const content = parseColoredText("John Smith says: Hello.");
+
+  const replaced = replaceTextRange(
+    content,
+    17,
+    22,
+    "{c2a3da}waves",
+  );
+
+  expect(replaced).toEqual({
+    text: "John Smith says: waves.",
+    colorRuns: [
+      { start: 0, end: 17, color: "#ffffff" },
+      { start: 17, end: 22, color: "#c2a3da" },
+      { start: 22, end: 23, color: "#ffffff" },
+    ],
   });
 });
 
@@ -236,6 +320,21 @@ test("undo and redo restore text, style, and position", () => {
     wrapWidth: 240,
     x: 48,
     y: 72,
+  });
+});
+
+test("undo and redo restore text color runs", () => {
+  const added = addTextLayer(openProject(), "text-1");
+  const colored = editTextLayer(added, "text-1", {
+    colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
+  });
+
+  expect(colored.layers[0]).toMatchObject({
+    colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
+  });
+  expect(undo(colored).layers[0]).toMatchObject({ colorRuns: [] });
+  expect(redo(undo(colored)).layers[0]).toMatchObject({
+    colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
   });
 });
 

@@ -36,11 +36,165 @@ export type ImageLayer = {
   };
 };
 
+export type TextColorRun = {
+  start: number;
+  end: number;
+  color: string;
+};
+
+export type TextContent = {
+  text: string;
+  colorRuns: TextColorRun[];
+};
+
+export const TEXT_COLOR_PRESETS = {
+  me: "#c2a3da",
+  do: "#800000",
+  say: "#ffffff",
+  low: "#d0d0d0",
+  whisper: "#ffff00",
+  phone: "#ffff99",
+  itemMoney: "#33aa33",
+} as const;
+
+function inferredLineColor(line: string): string | undefined {
+  const characterName = "[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*";
+  const rules: [RegExp, string][] = [
+    [new RegExp(`^\\* .+ \\(\\(${characterName}\\)\\)$`, "u"), TEXT_COLOR_PRESETS.do],
+    [/^\[(?:item|money)\]/i, TEXT_COLOR_PRESETS.itemMoney],
+    [
+      new RegExp(`^(?:\\[phone\\] )?${characterName} (?:says on the phone\\b|says \\(phone\\))`, "iu"),
+      TEXT_COLOR_PRESETS.phone,
+    ],
+    [/^\[phone\]/i, TEXT_COLOR_PRESETS.phone],
+    [
+      new RegExp(`^${characterName} (?:says quietly|murmurs)\\b`, "u"),
+      TEXT_COLOR_PRESETS.low,
+    ],
+    [new RegExp(`^${characterName} whispers\\b`, "u"), TEXT_COLOR_PRESETS.whisper],
+    [new RegExp(`^${characterName} says\\b`, "u"), TEXT_COLOR_PRESETS.say],
+    [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me],
+  ];
+  return rules.find(([pattern]) => pattern.test(line))?.[1];
+}
+
+function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
+  const merged: TextColorRun[] = [];
+  for (const run of [...runs].sort((left, right) => left.start - right.start)) {
+    if (run.end <= run.start) continue;
+    const previous = merged.at(-1);
+    if (previous && previous.end === run.start && previous.color === run.color) {
+      previous.end = run.end;
+    } else {
+      merged.push({ ...run });
+    }
+  }
+  return merged;
+}
+
+export function colorTextRange(
+  content: TextContent,
+  selectionStart: number,
+  selectionEnd: number,
+  color: string,
+): TextContent {
+  const start = clamp(
+    Math.min(selectionStart, selectionEnd),
+    0,
+    content.text.length,
+  );
+  const end = clamp(
+    Math.max(selectionStart, selectionEnd),
+    0,
+    content.text.length,
+  );
+  if (start === end) return content;
+
+  const colorRuns = content.colorRuns.flatMap((run) => {
+    if (run.end <= start || run.start >= end) return [run];
+    const remaining: TextColorRun[] = [];
+    if (run.start < start) remaining.push({ ...run, end: start });
+    if (run.end > end) remaining.push({ ...run, start: end });
+    return remaining;
+  });
+  colorRuns.push({ start, end, color: color.toLowerCase() });
+
+  return { ...content, colorRuns: mergeColorRuns(colorRuns) };
+}
+
+export function replaceTextRange(
+  content: TextContent,
+  selectionStart: number,
+  selectionEnd: number,
+  rawText: string,
+): TextContent {
+  const start = clamp(
+    Math.min(selectionStart, selectionEnd),
+    0,
+    content.text.length,
+  );
+  const end = clamp(
+    Math.max(selectionStart, selectionEnd),
+    0,
+    content.text.length,
+  );
+  const replacement = parseColoredText(rawText);
+  const replacementEnd = start + replacement.text.length;
+  const offset = replacement.text.length - (end - start);
+  const colorRuns = content.colorRuns.flatMap((run) => {
+    if (run.end <= start) return [run];
+    if (run.start >= end) {
+      return [{ ...run, start: run.start + offset, end: run.end + offset }];
+    }
+
+    const remaining: TextColorRun[] = [];
+    if (run.start < start) remaining.push({ ...run, end: start });
+    if (run.end > end) {
+      remaining.push({
+        ...run,
+        start: replacementEnd,
+        end: run.end + offset,
+      });
+    }
+    return remaining;
+  });
+
+  if (replacement.colorRuns.length > 0) {
+    colorRuns.push(
+      ...replacement.colorRuns.map((run) => ({
+        ...run,
+        start: run.start + start,
+        end: run.end + start,
+      })),
+    );
+  } else if (replacement.text.length > 0) {
+    const inherited = content.colorRuns.find(
+      (run) => run.start <= start && run.end >= start,
+    );
+    if (inherited) {
+      colorRuns.push({
+        start,
+        end: replacementEnd,
+        color: inherited.color,
+      });
+    }
+  }
+
+  return {
+    text:
+      content.text.slice(0, start) +
+      replacement.text +
+      content.text.slice(end),
+    colorRuns: mergeColorRuns(colorRuns),
+  };
+}
+
 export type TextLayer = {
   id: string;
   kind: "text";
   name: string;
   text: string;
+  colorRuns: TextColorRun[];
   x: number;
   y: number;
   fontFamily: string;
@@ -58,6 +212,7 @@ export type TextLayerEdit = Partial<
   Pick<
     TextLayer,
     | "text"
+    | "colorRuns"
     | "fontFamily"
     | "fontSize"
     | "bold"
@@ -81,6 +236,48 @@ export type Project = Snapshot & {
   past: Snapshot[];
   future: Snapshot[];
 };
+
+export function parseColoredText(rawText: string): TextContent {
+  const colorCode = /\{([0-9a-f]{6})\}/gi;
+  const colorRuns: TextColorRun[] = [];
+  let text = "";
+  let sourceIndex = 0;
+  let activeColor: string | undefined;
+
+  for (const match of rawText.matchAll(colorCode)) {
+    const segment = rawText.slice(sourceIndex, match.index);
+    const start = text.length;
+    text += segment;
+    if (activeColor && segment.length > 0) {
+      colorRuns.push({ start, end: text.length, color: activeColor });
+    }
+    activeColor = `#${match[1].toLowerCase()}`;
+    sourceIndex = match.index + match[0].length;
+  }
+
+  const tail = rawText.slice(sourceIndex);
+  const start = text.length;
+  text += tail;
+  if (activeColor && tail.length > 0) {
+    colorRuns.push({ start, end: text.length, color: activeColor });
+  }
+
+  let lineStart = 0;
+  for (const line of text.split("\n")) {
+    const lineEnd = lineStart + line.length;
+    const hasExplicitColor = colorRuns.some(
+      (run) => run.start < lineEnd && run.end > lineStart,
+    );
+    if (!hasExplicitColor && line.length > 0) {
+      const color = inferredLineColor(line);
+      if (color) colorRuns.push({ start: lineStart, end: lineEnd, color });
+    }
+    lineStart = lineEnd + 1;
+  }
+
+  colorRuns.sort((left, right) => left.start - right.start);
+  return { text, colorRuns };
+}
 
 export function supportedImageFormat(
   fileName: string,
@@ -193,6 +390,7 @@ export function addTextLayer(project: Project, id: string): Project {
     kind: "text",
     name: "Text",
     text: "Text",
+    colorRuns: [],
     x: 32,
     y: 32,
     fontFamily: "Arial",

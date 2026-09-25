@@ -188,6 +188,17 @@ button:disabled {
   align-items: end;
 }
 
+.selection-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: end;
+}
+
+.color-preset {
+  border-bottom-width: 3px;
+}
+
 .tool-panel .color-input {
   width: 48px;
   height: 32px;
@@ -266,27 +277,45 @@ button.active-control {
   cursor: move;
 }
 
-.inline-text-editor {
-  display: block;
+.inline-text-editor-shell {
+  position: relative;
+  display: grid;
   width: 100%;
   min-height: 1lh;
+}
+
+.inline-text-preview,
+.inline-text-editor {
+  grid-area: 1 / 1;
+  width: 100%;
+  min-height: 1lh;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inline-text-preview {
+  pointer-events: none;
+}
+
+.inline-text-editor {
+  display: block;
   padding: 0;
   overflow: hidden;
-  color: inherit;
+  color: transparent;
   font: inherit;
   font-weight: inherit;
   line-height: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
   background: transparent;
   border: 0;
   outline: 0;
   resize: none;
   cursor: text;
+  caret-color: #fff;
   touch-action: auto;
   user-select: text;
-  -webkit-text-stroke: inherit;
-  paint-order: inherit;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0;
 }
 
 .canvas-size {
