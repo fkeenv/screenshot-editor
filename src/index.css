@@ -192,6 +192,13 @@ button:disabled {
   width: 130px;
 }
 
+.tool-panel label.check-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+
 .composer {
   display: flex;
   flex: 1;
