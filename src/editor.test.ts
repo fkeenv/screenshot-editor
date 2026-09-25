@@ -13,6 +13,7 @@ import {
   moveLayer,
   nudgeLayer,
   openProject,
+  openSavedProject,
   parseColoredText,
   previewLayerOpacity,
   previewImageScale,
@@ -24,6 +25,7 @@ import {
   resizeTextLayer,
   replaceTextRange,
   scaleImageLayer,
+  saveProject,
   setCanvasSize,
   setView,
   supportedImageFormat,
@@ -49,6 +51,56 @@ test("a new project opens on a canvas with a visible size", () => {
 
   expect(project.canvasWidth).toBe(800);
   expect(project.canvasHeight).toBe(600);
+});
+
+test("a saved project reopens with its editable canvas and layer stack intact", () => {
+  let project = addImageLayer(openProject(), TEST_IMAGE);
+  project = cropImageLayer(project, "image-1", {
+    x: 12,
+    y: 8,
+    width: 240,
+    height: 120,
+  });
+  project = scaleImageLayer(project, "image-1", 1.5);
+  project = moveLayer(project, "image-1", 40, 24);
+  project = addTextLayer(project, "text-1", { x: 80, y: 56 });
+  project = editTextLayer(project, "text-1", {
+    text: "John Smith waves.",
+    colorRuns: [{ start: 0, end: 17, color: "#c2a3da" }],
+    fontFamily: "Georgia",
+    fontSize: 32,
+    bold: true,
+    outlineWidth: 3,
+    outlineColor: "#112233",
+    lineSpacing: 1.5,
+    wrapWidth: 280,
+  });
+  project = setLayerVisibility(project, "image-1", false);
+  project = setLayerOpacity(project, "text-1", 0.45);
+  project = renameLayer(project, "text-1", "Chat caption");
+  project = reorderLayer(project, "image-1", 1);
+  project = setCanvasSize(project, 1150, 600);
+  project = setView(project, 1.25, 18, -12);
+
+  const reopened = openSavedProject(saveProject(project));
+
+  expect(reopened).toEqual({ ...project, past: [], future: [] });
+});
+
+test("opening an unsupported project file version gives a useful error", () => {
+  const serialized = JSON.stringify({ version: 2, project: {} });
+
+  expect(() => openSavedProject(serialized)).toThrow(
+    "This project file version is not supported.",
+  );
+});
+
+test("opening a malformed project file gives a useful error", () => {
+  const serialized = JSON.stringify({ version: 1, project: {} });
+
+  expect(() => openSavedProject(serialized)).toThrow(
+    "This is not a valid screenshot editor project.",
+  );
 });
 
 test("choosing 1150×600 changes the canvas", () => {
