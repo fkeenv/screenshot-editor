@@ -387,6 +387,7 @@ export function App() {
   const [project, setProject] = useState<Project>(openProject);
   const [width, setWidth] = useState(String(project.canvasWidth));
   const [height, setHeight] = useState(String(project.canvasHeight));
+  const [customCanvasSizeOpen, setCustomCanvasSizeOpen] = useState(false);
   const [selectedLayerId, setSelectedLayerId] = useState<string>();
   const [importError, setImportError] = useState<string>();
   const [projectFileError, setProjectFileError] = useState<string>();
@@ -469,6 +470,13 @@ export function App() {
       setProject(opened);
       setWidth(String(opened.canvasWidth));
       setHeight(String(opened.canvasHeight));
+      setCustomCanvasSizeOpen(
+        !PRESETS.some(
+          (preset) =>
+            preset.width === opened.canvasWidth &&
+            preset.height === opened.canvasHeight,
+        ),
+      );
       setSelectedLayerId(undefined);
       setEditingTextLayerId(undefined);
       setSelectTextOnEdit(false);
@@ -857,28 +865,50 @@ export function App() {
                   <button
                     key={`${preset.width}x${preset.height}`}
                     type="button"
-                    onClick={() => applySize(preset.width, preset.height)}
+                    className={
+                      !customCanvasSizeOpen &&
+                      project.canvasWidth === preset.width &&
+                      project.canvasHeight === preset.height
+                        ? "active-control"
+                        : undefined
+                    }
+                    onClick={() => {
+                      setCustomCanvasSizeOpen(false);
+                      applySize(preset.width, preset.height);
+                    }}
                   >
                     {preset.width}×{preset.height}
                   </button>
                 ))}
-                <label>
-                  Width
-                  <input
-                    value={width}
-                    inputMode="numeric"
-                    onChange={(event) => setWidth(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Height
-                  <input
-                    value={height}
-                    inputMode="numeric"
-                    onChange={(event) => setHeight(event.target.value)}
-                  />
-                </label>
-                <button type="submit">Apply</button>
+                <button
+                  type="button"
+                  className={customCanvasSizeOpen ? "active-control" : undefined}
+                  aria-pressed={customCanvasSizeOpen}
+                  onClick={() => setCustomCanvasSizeOpen(true)}
+                >
+                  Custom
+                </button>
+                {customCanvasSizeOpen ? (
+                  <>
+                    <label>
+                      Width
+                      <input
+                        value={width}
+                        inputMode="numeric"
+                        onChange={(event) => setWidth(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Height
+                      <input
+                        value={height}
+                        inputMode="numeric"
+                        onChange={(event) => setHeight(event.target.value)}
+                      />
+                    </label>
+                    <button type="submit">Apply</button>
+                  </>
+                ) : null}
               </form>
 
               {selectedImageLayer ? (
