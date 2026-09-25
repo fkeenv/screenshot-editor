@@ -41,6 +41,7 @@ import {
   type TextLayer,
   type TextLayerEdit,
 } from "./editor";
+import { stitchProjects } from "./stitch";
 import {
   ColoredText,
   InlineTextEditor,
@@ -62,7 +63,13 @@ const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 const TEXT_EDIT_FRAME_WIDTH = 6;
 const PROJECT_FILE_ACCEPT = ".screenshot-project.json,application/json";
 
-const TOOL_MENUS = ["File", "Edit", "Image", "Text", "View"] as const;
+const TOOL_MENUS = ["File", "Stitch", "Edit", "Image", "Text", "View"] as const;
+
+type StitchScreen = {
+  id: string;
+  name: string;
+  project: Project;
+};
 type ToolMenu = (typeof TOOL_MENUS)[number];
 
 const FONT_FAMILIES = [
@@ -121,13 +128,84 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function downloadExport(project: Project, options: ExportOptions) {
+async function downloadExport(
+  project: Project,
+  options: ExportOptions,
+  filename = "screenshot",
+) {
   const exported = await exportFlattened(project, options);
   const copy = new Uint8Array(exported.bytes.byteLength);
   copy.set(exported.bytes);
   downloadBlob(
     new Blob([copy.buffer], { type: exported.mediaType }),
-    `screenshot.${EXPORT_EXTENSION[options.format]}`,
+    `${filename}.${EXPORT_EXTENSION[options.format]}`,
+  );
+}
+
+function ExportChoices({
+  format,
+  quality,
+  lossless,
+  actionLabel,
+  disabled = false,
+  onFormat,
+  onQuality,
+  onLossless,
+  onExport,
+}: {
+  format: ExportFormat;
+  quality: number;
+  lossless: boolean;
+  actionLabel: string;
+  disabled?: boolean;
+  onFormat: (format: ExportFormat) => void;
+  onQuality: (quality: number) => void;
+  onLossless: (lossless: boolean) => void;
+  onExport: () => void;
+}) {
+  return (
+    <>
+      <label>
+        Export
+        <select
+          value={format}
+          onChange={(event) => onFormat(event.target.value as ExportFormat)}
+        >
+          <option value="png">PNG</option>
+          <option value="jpeg">JPG</option>
+          <option value="webp">WebP</option>
+        </select>
+      </label>
+      {format === "webp" ? (
+        <label className="check-option">
+          <input
+            type="checkbox"
+            checked={lossless}
+            onChange={(event) => onLossless(event.target.checked)}
+          />
+          Lossless
+        </label>
+      ) : null}
+      {showsExportQuality(format, lossless) ? (
+        <>
+          <label className="scale-control">
+            Quality
+            <input
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              value={quality}
+              onChange={(event) => onQuality(Number(event.target.value))}
+            />
+          </label>
+          <output>{quality}</output>
+        </>
+      ) : null}
+      <button type="button" onClick={onExport} disabled={disabled}>
+        {actionLabel}
+      </button>
+    </>
   );
 }
 
@@ -424,6 +502,8 @@ export function App() {
   const [exportQuality, setExportQuality] = useState(80);
   const [exportLossless, setExportLossless] = useState(false);
   const [exportError, setExportError] = useState<string>();
+  const [stitchScreens, setStitchScreens] = useState<StitchScreen[]>([]);
+  const [stitchError, setStitchError] = useState<string>();
   const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
@@ -524,6 +604,62 @@ export function App() {
           : "The project file could not be opened.",
       );
     }
+  }
+
+  async function addStitchScreens(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const files = [...(input.files ?? [])];
+    input.value = "";
+    if (files.length === 0) return;
+
+    const opened: StitchScreen[] = [];
+    let failure: string | undefined;
+    for (const file of files) {
+      try {
+        opened.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          project: openSavedProject(await file.text()),
+        });
+      } catch (error) {
+        failure =
+          error instanceof Error
+            ? error.message
+            : "The project file could not be opened.";
+      }
+    }
+    if (opened.length > 0) {
+      setStitchScreens((current) => [...current, ...opened]);
+    }
+    setStitchError(failure);
+  }
+
+  function moveStitchScreen(index: number, direction: -1 | 1) {
+    setStitchScreens((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      const [screen] = next.splice(index, 1);
+      if (!screen) return current;
+      next.splice(target, 0, screen);
+      return next;
+    });
+  }
+
+  function downloadProjectImage(source: Project, filename: string) {
+    void downloadExport(source, {
+      format: exportFormat,
+      quality: exportQuality,
+      lossless: exportFormat === "webp" && exportLossless,
+    }, filename).then(
+      () => setExportError(undefined),
+      (error: unknown) =>
+        setExportError(
+          error instanceof Error
+            ? error.message
+            : "The image could not be exported.",
+        ),
+    );
   }
 
   function placeTextBox(event: { clientX: number; clientY: number }) {
@@ -868,56 +1004,82 @@ export function App() {
                 Projects keep editable layers · Images: JPG, PNG, WebP, GIF, or BMP
               </span>
               <span className="tool-divider" />
-              <label>
-                Export
-                <select
-                  value={exportFormat}
-                  onChange={(event) =>
-                    setExportFormat(event.target.value as ExportFormat)
-                  }
-                >
-                  <option value="png">PNG</option>
-                  <option value="jpeg">JPG</option>
-                  <option value="webp">WebP</option>
-                </select>
+              <ExportChoices
+                format={exportFormat}
+                quality={exportQuality}
+                lossless={exportLossless}
+                actionLabel="Export"
+                onFormat={setExportFormat}
+                onQuality={setExportQuality}
+                onLossless={setExportLossless}
+                onExport={() => downloadProjectImage(project, "screenshot")}
+              />
+              <span className="tool-hint">
+                PNG stays sharp and can be transparent. JPG is opaque. Lower
+                quality makes JPG and WebP smaller.
+              </span>
+            </div>
+          ) : null}
+
+          {activeMenu === "Stitch" ? (
+            <div className="control-group stitch-panel">
+              <label className="import-button">
+                Add screens
+                <input
+                  type="file"
+                  accept={PROJECT_FILE_ACCEPT}
+                  multiple
+                  onChange={addStitchScreens}
+                />
               </label>
-              {exportFormat === "webp" ? (
-                <label className="check-option">
-                  <input
-                    type="checkbox"
-                    checked={exportLossless}
-                    onChange={(event) => setExportLossless(event.target.checked)}
-                  />
-                  Lossless
-                </label>
-              ) : null}
-              {showsExportQuality(exportFormat, exportLossless) ? (
-                <>
-                  <label className="scale-control">
-                    Quality
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      step="1"
-                      value={exportQuality}
-                      onChange={(event) =>
-                        setExportQuality(Number(event.target.value))
+              <ol className="stitch-list">
+                {stitchScreens.map((screen, index) => (
+                  <li key={screen.id}>
+                    <span>{screen.name}</span>
+                    <span>
+                      {screen.project.canvasWidth}×{screen.project.canvasHeight}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => moveStitchScreen(index, -1)}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === stitchScreens.length - 1}
+                      onClick={() => moveStitchScreen(index, 1)}
+                    >
+                      Down
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStitchScreens((current) =>
+                          current.filter((item) => item.id !== screen.id),
+                        )
                       }
-                    />
-                  </label>
-                  <output>{exportQuality}</output>
-                </>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  void downloadExport(project, {
-                    format: exportFormat,
-                    quality: exportQuality,
-                    lossless: exportFormat === "webp" && exportLossless,
-                  }).then(
-                    () => setExportError(undefined),
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <ExportChoices
+                format={exportFormat}
+                quality={exportQuality}
+                lossless={exportLossless}
+                actionLabel="Export stitch"
+                disabled={stitchScreens.length < 2}
+                onFormat={setExportFormat}
+                onQuality={setExportQuality}
+                onLossless={setExportLossless}
+                onExport={() => {
+                  void stitchProjects(
+                    stitchScreens.map((screen) => screen.project),
+                  ).then(
+                    (stitched) => downloadProjectImage(stitched, "stitch"),
                     (error: unknown) =>
                       setExportError(
                         error instanceof Error
@@ -926,13 +1088,11 @@ export function App() {
                       ),
                   );
                 }}
-              >
-                Export
-              </button>
+              />
               <span className="tool-hint">
-                PNG stays sharp and can be transparent. JPG is opaque. Lower
-                quality makes JPG and WebP smaller.
+                Add saved screens and order them from top to bottom.
               </span>
+              {stitchError ? <p className="import-error">{stitchError}</p> : null}
             </div>
           ) : null}
 
