@@ -159,6 +159,11 @@ button:disabled {
   border-radius: 4px;
 }
 
+.tool-panel select {
+  height: 34px;
+  padding: 0 8px;
+}
+
 .tool-divider {
   width: 1px;
   height: 34px;
@@ -197,10 +202,6 @@ button:disabled {
   align-items: center;
   gap: 6px;
   min-height: 34px;
-}
-
-.stitch-panel {
-  align-items: center;
 }
 
 .stitch-list {
