@@ -48,32 +48,32 @@ export type TextContent = {
 };
 
 export const TEXT_COLOR_PRESETS = {
-  me: "#c2a3da",
-  do: "#800000",
-  say: "#ffffff",
-  low: "#d0d0d0",
-  whisper: "#ffff00",
-  phone: "#ffff99",
-  itemMoney: "#33aa33",
+  me: { label: "/me", color: "#c2a3da" },
+  do: { label: "/do", color: "#800000" },
+  say: { label: "Say", color: "#ffffff" },
+  low: { label: "Low", color: "#d0d0d0" },
+  whisper: { label: "Whisper", color: "#ffff00" },
+  phone: { label: "Phone", color: "#ffff99" },
+  itemMoney: { label: "Item / money", color: "#33aa33" },
 } as const;
 
 function inferredLineColor(line: string): string | undefined {
   const characterName = "[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*";
   const rules: [RegExp, string][] = [
-    [new RegExp(`^\\* .+ \\(\\(${characterName}\\)\\)$`, "u"), TEXT_COLOR_PRESETS.do],
-    [/^\[(?:item|money)\]/i, TEXT_COLOR_PRESETS.itemMoney],
+    [new RegExp(`^\\* .+ \\(\\(${characterName}\\)\\)$`, "u"), TEXT_COLOR_PRESETS.do.color],
+    [/^\[(?:item|money)\]/i, TEXT_COLOR_PRESETS.itemMoney.color],
     [
       new RegExp(`^(?:\\[phone\\] )?${characterName} (?:says on the phone\\b|says \\(phone\\))`, "iu"),
-      TEXT_COLOR_PRESETS.phone,
+      TEXT_COLOR_PRESETS.phone.color,
     ],
-    [/^\[phone\]/i, TEXT_COLOR_PRESETS.phone],
+    [/^\[phone\]/i, TEXT_COLOR_PRESETS.phone.color],
     [
       new RegExp(`^${characterName} (?:says quietly|murmurs)\\b`, "u"),
-      TEXT_COLOR_PRESETS.low,
+      TEXT_COLOR_PRESETS.low.color,
     ],
-    [new RegExp(`^${characterName} whispers\\b`, "u"), TEXT_COLOR_PRESETS.whisper],
-    [new RegExp(`^${characterName} says\\b`, "u"), TEXT_COLOR_PRESETS.say],
-    [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me],
+    [new RegExp(`^${characterName} whispers\\b`, "u"), TEXT_COLOR_PRESETS.whisper.color],
+    [new RegExp(`^${characterName} says\\b`, "u"), TEXT_COLOR_PRESETS.say.color],
+    [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me.color],
   ];
   return rules.find(([pattern]) => pattern.test(line))?.[1];
 }
@@ -92,21 +92,27 @@ function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
   return merged;
 }
 
+function normalizeTextRange(
+  textLength: number,
+  selectionStart: number,
+  selectionEnd: number,
+): [start: number, end: number] {
+  return [
+    clamp(Math.min(selectionStart, selectionEnd), 0, textLength),
+    clamp(Math.max(selectionStart, selectionEnd), 0, textLength),
+  ];
+}
+
 export function colorTextRange(
   content: TextContent,
   selectionStart: number,
   selectionEnd: number,
   color: string,
 ): TextContent {
-  const start = clamp(
-    Math.min(selectionStart, selectionEnd),
-    0,
+  const [start, end] = normalizeTextRange(
     content.text.length,
-  );
-  const end = clamp(
-    Math.max(selectionStart, selectionEnd),
-    0,
-    content.text.length,
+    selectionStart,
+    selectionEnd,
   );
   if (start === end) return content;
 
@@ -128,15 +134,10 @@ export function replaceTextRange(
   selectionEnd: number,
   rawText: string,
 ): TextContent {
-  const start = clamp(
-    Math.min(selectionStart, selectionEnd),
-    0,
+  const [start, end] = normalizeTextRange(
     content.text.length,
-  );
-  const end = clamp(
-    Math.max(selectionStart, selectionEnd),
-    0,
-    content.text.length,
+    selectionStart,
+    selectionEnd,
   );
   const replacement = parseColoredText(rawText);
   const replacementEnd = start + replacement.text.length;

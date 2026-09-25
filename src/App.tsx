@@ -3,16 +3,12 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type FocusEvent,
   type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MutableRefObject,
   type PointerEvent,
 } from "react";
 import {
   addImageLayer,
   addTextLayer,
-  colorTextRange,
   cropImageLayer,
   editTextLayer,
   finishImageScale,
@@ -22,7 +18,6 @@ import {
   openProject,
   previewImageScale,
   redo,
-  replaceTextRange,
   scaleImageLayer,
   setCanvasSize,
   setView,
@@ -34,10 +29,14 @@ import {
   type Layer,
   type Project,
   type TextContent,
-  type TextColorRun,
   type TextLayer,
   type TextLayerEdit,
 } from "./editor";
+import {
+  ColoredText,
+  InlineTextEditor,
+  type TextEditorHandle,
+} from "./InlineTextEditor";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -57,44 +56,6 @@ const FONT_FAMILIES = [
   "Georgia",
   "Courier New",
 ] as const;
-
-const COLOR_PRESET_LABELS = {
-  me: "/me",
-  do: "/do",
-  say: "Say",
-  low: "Low",
-  whisper: "Whisper",
-  phone: "Phone",
-  itemMoney: "Item / money",
-} satisfies Record<keyof typeof TEXT_COLOR_PRESETS, string>;
-
-type TextEditorHandle = {
-  applyColor: (color: string) => void;
-  focus: () => void;
-  preserveOnBlur: () => void;
-};
-
-function ColoredText({
-  text,
-  colorRuns,
-}: {
-  text: string;
-  colorRuns: TextColorRun[];
-}) {
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  for (const run of colorRuns) {
-    if (cursor < run.start) parts.push(text.slice(cursor, run.start));
-    parts.push(
-      <span style={{ color: run.color }} key={`${run.start}-${run.end}`}>
-        {text.slice(run.start, run.end)}
-      </span>,
-    );
-    cursor = run.end;
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts;
-}
 
 function readImage(file: File): Promise<{
   source: string;
@@ -362,18 +323,18 @@ function TextControls({
       </label>
       <div className="selection-colors" aria-label="Selection colors">
         <span className="control-title">Selection color</span>
-        {Object.entries(TEXT_COLOR_PRESETS).map(([preset, color]) => (
+        {Object.entries(TEXT_COLOR_PRESETS).map(([preset, presetDetails]) => (
           <button
             type="button"
             className="color-preset"
             data-text-color-control
             disabled={!canColorSelection}
             key={preset}
-            style={{ borderBottomColor: color }}
+            style={{ borderBottomColor: presetDetails.color }}
             onPointerDown={(event) => event.preventDefault()}
-            onClick={() => onApplyColor(color)}
+            onClick={() => onApplyColor(presetDetails.color)}
           >
-            {COLOR_PRESET_LABELS[preset as keyof typeof COLOR_PRESET_LABELS]}
+            {presetDetails.label}
           </button>
         ))}
         <label>
@@ -393,189 +354,6 @@ function TextControls({
           />
         </label>
       </div>
-    </div>
-  );
-}
-
-function InlineTextEditor({
-  layer,
-  selectText,
-  editorHandle,
-  onSelectionChange,
-  onCommit,
-  onCancel,
-}: {
-  layer: TextLayer;
-  selectText: boolean;
-  editorHandle: MutableRefObject<TextEditorHandle | null>;
-  onSelectionChange: (hasSelection: boolean) => void;
-  onCommit: (content: TextContent) => void;
-  onCancel: () => void;
-}) {
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const cancelEdit = useRef(false);
-  const preserveOnBlur = useRef(false);
-  const selection = useRef({ start: 0, end: 0 });
-  const [content, setContent] = useState<TextContent>({
-    text: layer.text,
-    colorRuns: layer.colorRuns,
-  });
-  const contentRef = useRef(content);
-
-  function resize(element: HTMLTextAreaElement) {
-    element.style.height = "0";
-    element.style.height = `${element.scrollHeight}px`;
-  }
-
-  function updateContent(next: TextContent) {
-    contentRef.current = next;
-    setContent(next);
-  }
-
-  function rememberSelection(element: HTMLTextAreaElement) {
-    selection.current = {
-      start: element.selectionStart,
-      end: element.selectionEnd,
-    };
-    onSelectionChange(element.selectionStart !== element.selectionEnd);
-  }
-
-  function restoreSelection() {
-    requestAnimationFrame(() => {
-      const element = textarea.current;
-      if (!element) return;
-      element.focus();
-      element.setSelectionRange(selection.current.start, selection.current.end);
-    });
-  }
-
-  function applyColor(color: string) {
-    const { start, end } = selection.current;
-    if (start === end) return;
-    updateContent(colorTextRange(contentRef.current, start, end, color));
-    restoreSelection();
-  }
-
-  useEffect(() => {
-    const element = textarea.current;
-    if (!element) return;
-    resize(element);
-    element.focus();
-    if (selectText) {
-      element.select();
-      rememberSelection(element);
-    }
-  }, [selectText]);
-
-  useEffect(() => {
-    const element = textarea.current;
-    if (element) resize(element);
-  }, [content.text]);
-
-  editorHandle.current = {
-    applyColor,
-    focus: restoreSelection,
-    preserveOnBlur: () => {
-      preserveOnBlur.current = true;
-    },
-  };
-
-  useEffect(() => {
-    return () => {
-      editorHandle.current = null;
-      onSelectionChange(false);
-    };
-  }, [editorHandle, onSelectionChange]);
-
-  function finishEditing(event: FocusEvent<HTMLTextAreaElement>) {
-    if (preserveOnBlur.current) {
-      preserveOnBlur.current = false;
-      return;
-    }
-    if (
-      event.relatedTarget instanceof HTMLElement &&
-      event.relatedTarget.closest("[data-text-color-control]")
-    ) {
-      return;
-    }
-    if (cancelEdit.current) {
-      onCancel();
-      return;
-    }
-    onCommit(contentRef.current);
-  }
-
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    event.stopPropagation();
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    cancelEdit.current = true;
-    event.currentTarget.blur();
-  }
-
-  function changeText(nextText: string) {
-    const previous = contentRef.current.text;
-    let start = 0;
-    while (start < previous.length && previous[start] === nextText[start]) {
-      start += 1;
-    }
-    let previousEnd = previous.length;
-    let nextEnd = nextText.length;
-    while (
-      previousEnd > start &&
-      nextEnd > start &&
-      previous[previousEnd - 1] === nextText[nextEnd - 1]
-    ) {
-      previousEnd -= 1;
-      nextEnd -= 1;
-    }
-    updateContent(
-      replaceTextRange(
-        contentRef.current,
-        start,
-        previousEnd,
-        nextText.slice(start, nextEnd),
-      ),
-    );
-  }
-
-  function pasteText(event: React.ClipboardEvent<HTMLTextAreaElement>) {
-    event.preventDefault();
-    const element = event.currentTarget;
-    const start = element.selectionStart;
-    const end = element.selectionEnd;
-    const previousLength = contentRef.current.text.length;
-    const next = replaceTextRange(
-      contentRef.current,
-      start,
-      end,
-      event.clipboardData.getData("text/plain"),
-    );
-    const caret = start + next.text.length - (previousLength - (end - start));
-    selection.current = { start: caret, end: caret };
-    onSelectionChange(false);
-    updateContent(next);
-    restoreSelection();
-  }
-
-  return (
-    <div className="inline-text-editor-shell">
-      <div className="inline-text-preview" aria-hidden="true">
-        <ColoredText text={content.text} colorRuns={content.colorRuns} />
-      </div>
-      <textarea
-        ref={textarea}
-        className="inline-text-editor"
-        aria-label={`Edit ${layer.name}`}
-        value={content.text}
-        spellCheck
-        onChange={(event) => changeText(event.target.value)}
-        onSelect={(event) => rememberSelection(event.currentTarget)}
-        onPaste={pasteText}
-        onBlur={finishEditing}
-        onKeyDown={handleKeyDown}
-        onPointerDown={(event) => event.stopPropagation()}
-      />
     </div>
   );
 }
@@ -1130,6 +908,21 @@ export function App() {
                     selectText={selectTextOnEdit}
                     editorHandle={textEditor}
                     onSelectionChange={setHasTextSelection}
+                    onColorCommit={(previous, next) =>
+                      setProject((current) => {
+                        const withPendingText = editTextLayer(
+                          current,
+                          layer.id,
+                          previous,
+                        );
+                        return editTextLayer(withPendingText, layer.id, next);
+                      })
+                    }
+                    onHistory={(shouldRedo) =>
+                      setProject((current) =>
+                        shouldRedo ? redo(current) : undo(current),
+                      )
+                    }
                     onCommit={(content) =>
                       finishTextEditing(layer.id, content)
                     }

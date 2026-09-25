@@ -325,16 +325,21 @@ test("undo and redo restore text, style, and position", () => {
 
 test("undo and redo restore text color runs", () => {
   const added = addTextLayer(openProject(), "text-1");
-  const colored = editTextLayer(added, "text-1", {
+  const purple = editTextLayer(added, "text-1", {
     colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
+  });
+  const red = editTextLayer(purple, "text-1", {
+    colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
   });
 
-  expect(colored.layers[0]).toMatchObject({
+  expect(red.layers[0]).toMatchObject({
+    colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
+  });
+  expect(undo(red).layers[0]).toMatchObject({
     colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
   });
-  expect(undo(colored).layers[0]).toMatchObject({ colorRuns: [] });
-  expect(redo(undo(colored)).layers[0]).toMatchObject({
-    colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
+  expect(redo(undo(red)).layers[0]).toMatchObject({
+    colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
   });
 });
 
