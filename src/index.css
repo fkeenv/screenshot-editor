@@ -129,8 +129,20 @@ button:disabled {
   font-size: 12px;
 }
 
+.tool-panel button,
+.tool-panel .import-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .tool-panel input:not([type="range"]):not([type="file"]) {
   width: 72px;
+  height: 34px;
   padding: 6px 8px;
   color: inherit;
   background: #27272a;
@@ -155,7 +167,10 @@ button:disabled {
 }
 
 .tool-hint {
-  align-self: center;
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  align-self: flex-end;
   color: #a1a1aa;
   font-size: 12px;
 }
@@ -167,11 +182,6 @@ button:disabled {
   color: #d4d4d8;
   font-size: 13px;
   text-align: center;
-}
-
-.import-button {
-  display: block;
-  font-size: 13px;
 }
 
 .import-button input {
@@ -278,7 +288,10 @@ button.active-control {
 }
 
 .control-title {
-  align-self: center;
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  align-self: flex-end;
   color: #d4d4d8;
   font-size: 13px;
 }

@@ -352,6 +352,120 @@ export type Project = Snapshot & {
   future: Snapshot[];
 };
 
+type ProjectFile = {
+  version: 1;
+  project: Snapshot;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isBaseLayer(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.visible === "boolean" &&
+    isFiniteNumber(value.opacity) &&
+    value.opacity >= 0 &&
+    value.opacity <= 1 &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y)
+  );
+}
+
+function isImageLayer(value: unknown): value is ImageLayer {
+  if (!isRecord(value) || !isRecord(value.crop)) return false;
+  return (
+    isBaseLayer(value) &&
+    value.kind === "image" &&
+    typeof value.source === "string" &&
+    typeof value.format === "string" &&
+    IMAGE_FORMATS.has(value.format) &&
+    isFiniteNumber(value.naturalWidth) &&
+    value.naturalWidth > 0 &&
+    isFiniteNumber(value.naturalHeight) &&
+    value.naturalHeight > 0 &&
+    isFiniteNumber(value.scale) &&
+    value.scale > 0 &&
+    isFiniteNumber(value.crop.x) &&
+    isFiniteNumber(value.crop.y) &&
+    isFiniteNumber(value.crop.width) &&
+    value.crop.width > 0 &&
+    isFiniteNumber(value.crop.height) &&
+    value.crop.height > 0
+  );
+}
+
+function isTextLayer(value: unknown): value is TextLayer {
+  if (!isRecord(value) || !Array.isArray(value.colorRuns)) return false;
+  return (
+    isBaseLayer(value) &&
+    value.kind === "text" &&
+    typeof value.text === "string" &&
+    value.colorRuns.every(
+      (run) =>
+        isRecord(run) &&
+        isFiniteNumber(run.start) &&
+        isFiniteNumber(run.end) &&
+        typeof run.color === "string",
+    ) &&
+    typeof value.fontFamily === "string" &&
+    isFiniteNumber(value.fontSize) &&
+    typeof value.bold === "boolean" &&
+    isFiniteNumber(value.outlineWidth) &&
+    typeof value.outlineColor === "string" &&
+    isFiniteNumber(value.lineSpacing) &&
+    isFiniteNumber(value.wrapWidth)
+  );
+}
+
+function isSnapshot(value: unknown): value is Snapshot {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.canvasWidth) &&
+    value.canvasWidth > 0 &&
+    isFiniteNumber(value.canvasHeight) &&
+    value.canvasHeight > 0 &&
+    isFiniteNumber(value.zoom) &&
+    value.zoom > 0 &&
+    isFiniteNumber(value.panX) &&
+    isFiniteNumber(value.panY) &&
+    Array.isArray(value.layers) &&
+    value.layers.every(
+      (layer) => isImageLayer(layer) || isTextLayer(layer),
+    )
+  );
+}
+
+export function saveProject(project: Project): string {
+  const file: ProjectFile = {
+    version: 1,
+    project: snapshot(project),
+  };
+  return JSON.stringify(file, null, 2);
+}
+
+export function openSavedProject(serialized: string): Project {
+  let file: Partial<ProjectFile>;
+  try {
+    file = JSON.parse(serialized) as Partial<ProjectFile>;
+  } catch {
+    throw new Error("This is not a valid screenshot editor project.");
+  }
+  if (file.version !== 1) {
+    throw new Error("This project file version is not supported.");
+  }
+  if (!isSnapshot(file.project)) {
+    throw new Error("This is not a valid screenshot editor project.");
+  }
+  return { ...file.project, past: [], future: [] };
+}
+
 export function parseColoredText(rawText: string): TextContent {
   const colorCode = /!?\{#?([0-9a-f]{6}|[0-9a-f]{3})\}/gi;
   const colorRuns: TextColorRun[] = [];

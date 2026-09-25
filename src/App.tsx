@@ -18,6 +18,7 @@ import {
   moveLayer,
   nudgeLayer,
   openProject,
+  openSavedProject,
   previewLayerOpacity,
   previewImageScale,
   renameLayer,
@@ -25,6 +26,7 @@ import {
   reorderLayer,
   resizeTextLayer,
   scaleImageLayer,
+  saveProject,
   setCanvasSize,
   setLayerVisibility,
   setView,
@@ -53,6 +55,7 @@ const PRESETS = [
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 const TEXT_EDIT_FRAME_WIDTH = 6;
+const PROJECT_FILE_ACCEPT = ".screenshot-project.json,application/json";
 
 const TOOL_MENUS = ["File", "Edit", "Image", "Text", "View"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
@@ -92,6 +95,18 @@ function readImage(file: File): Promise<{
     };
     reader.readAsDataURL(file);
   });
+}
+
+function downloadProject(project: Project) {
+  const blob = new Blob([saveProject(project)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "untitled.screenshot-project.json";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function CropControls({
@@ -372,8 +387,10 @@ export function App() {
   const [project, setProject] = useState<Project>(openProject);
   const [width, setWidth] = useState(String(project.canvasWidth));
   const [height, setHeight] = useState(String(project.canvasHeight));
+  const [customCanvasSizeOpen, setCustomCanvasSizeOpen] = useState(false);
   const [selectedLayerId, setSelectedLayerId] = useState<string>();
   const [importError, setImportError] = useState<string>();
+  const [projectFileError, setProjectFileError] = useState<string>();
   const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
@@ -438,6 +455,40 @@ export function App() {
     } catch (error) {
       setImportError(
         error instanceof Error ? error.message : "The image could not be imported.",
+      );
+    }
+  }
+
+  async function openProjectFile(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+
+    try {
+      const opened = openSavedProject(await file.text());
+      setProject(opened);
+      setWidth(String(opened.canvasWidth));
+      setHeight(String(opened.canvasHeight));
+      setCustomCanvasSizeOpen(
+        !PRESETS.some(
+          (preset) =>
+            preset.width === opened.canvasWidth &&
+            preset.height === opened.canvasHeight,
+        ),
+      );
+      setSelectedLayerId(undefined);
+      setEditingTextLayerId(undefined);
+      setSelectTextOnEdit(false);
+      setHasTextSelection(false);
+      setPlacingText(false);
+      setProjectFileError(undefined);
+      setImportError(undefined);
+    } catch (error) {
+      setProjectFileError(
+        error instanceof Error
+          ? error.message
+          : "The project file could not be opened.",
       );
     }
   }
@@ -760,6 +811,18 @@ export function App() {
         >
           {activeMenu === "File" ? (
             <div className="control-group">
+              <button type="button" onClick={() => downloadProject(project)}>
+                Save project
+              </button>
+              <label className="import-button">
+                Open project
+                <input
+                  type="file"
+                  accept={PROJECT_FILE_ACCEPT}
+                  onChange={openProjectFile}
+                />
+              </label>
+              <span className="tool-divider" />
               <label className="import-button">
                 Import image
                 <input
@@ -768,7 +831,9 @@ export function App() {
                   onChange={importImage}
                 />
               </label>
-              <span className="tool-hint">JPG, PNG, WebP, GIF, or BMP</span>
+              <span className="tool-hint">
+                Projects keep editable layers · Images: JPG, PNG, WebP, GIF, or BMP
+              </span>
             </div>
           ) : null}
 
@@ -800,28 +865,50 @@ export function App() {
                   <button
                     key={`${preset.width}x${preset.height}`}
                     type="button"
-                    onClick={() => applySize(preset.width, preset.height)}
+                    className={
+                      !customCanvasSizeOpen &&
+                      project.canvasWidth === preset.width &&
+                      project.canvasHeight === preset.height
+                        ? "active-control"
+                        : undefined
+                    }
+                    onClick={() => {
+                      setCustomCanvasSizeOpen(false);
+                      applySize(preset.width, preset.height);
+                    }}
                   >
                     {preset.width}×{preset.height}
                   </button>
                 ))}
-                <label>
-                  Width
-                  <input
-                    value={width}
-                    inputMode="numeric"
-                    onChange={(event) => setWidth(event.target.value)}
-                  />
-                </label>
-                <label>
-                  Height
-                  <input
-                    value={height}
-                    inputMode="numeric"
-                    onChange={(event) => setHeight(event.target.value)}
-                  />
-                </label>
-                <button type="submit">Apply</button>
+                <button
+                  type="button"
+                  className={customCanvasSizeOpen ? "active-control" : undefined}
+                  aria-pressed={customCanvasSizeOpen}
+                  onClick={() => setCustomCanvasSizeOpen(true)}
+                >
+                  Custom
+                </button>
+                {customCanvasSizeOpen ? (
+                  <>
+                    <label>
+                      Width
+                      <input
+                        value={width}
+                        inputMode="numeric"
+                        onChange={(event) => setWidth(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Height
+                      <input
+                        value={height}
+                        inputMode="numeric"
+                        onChange={(event) => setHeight(event.target.value)}
+                      />
+                    </label>
+                    <button type="submit">Apply</button>
+                  </>
+                ) : null}
               </form>
 
               {selectedImageLayer ? (
@@ -932,6 +1019,9 @@ export function App() {
           ) : null}
 
           {importError ? <p className="import-error">{importError}</p> : null}
+          {projectFileError ? (
+            <p className="import-error">{projectFileError}</p>
+          ) : null}
         </div>
       </header>
 
