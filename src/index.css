@@ -199,6 +199,31 @@ button:disabled {
   min-height: 34px;
 }
 
+.stitch-panel {
+  align-items: center;
+}
+
+.stitch-list {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stitch-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stitch-list li span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer {
   display: flex;
   flex: 1;
