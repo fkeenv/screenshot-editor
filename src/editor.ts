@@ -50,32 +50,62 @@ export type TextContent = {
 export const TEXT_COLOR_PRESETS = {
   me: { label: "/me", color: "#c2a3da" },
   do: { label: "/do", color: "#c2a3da" },
-  say: { label: "Say", color: "#ffffff" },
-  low: { label: "Low", color: "#d0d0d0" },
-  whisper: { label: "Whisper", color: "#ffff00" },
-  phone: { label: "Phone", color: "#ffff99" },
-  itemMoney: { label: "Item / money", color: "#33aa33" },
+  say: { label: "Say / shout", color: "#f1f1f1" },
+  low: { label: "Low", color: "#adadad" },
+  whisper: { label: "Whisper", color: "#eda841" },
+  phone: { label: "Phone speech", color: "#fbf724" },
+  transaction: { label: "Item given / money", color: "#56d64b" },
+  inventory: { label: "Inventory", color: "#ffff00" },
+  radio: { label: "Radio", color: "#ece3a7" },
+  hq: { label: "HQ", color: "#006eff" },
+  phoneNotice: { label: "Phone notice", color: "#ffff00" },
+  intercom: { label: "Intercom / CK blue", color: "#3896f3" },
+  characterKill: { label: "CK red", color: "#f00000" },
 } as const;
 
 function inferredLineColor(line: string): string | undefined {
-  const characterName = "[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*";
+  const message = line.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
+  const characterName =
+    "(?:[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*|Mask(?:_[\\p{L}\\p{N}]+)+)";
   const rules: [RegExp, string][] = [
-    [new RegExp(`^\\* .+ \\(\\(${characterName}\\)\\)$`, "u"), TEXT_COLOR_PRESETS.do.color],
-    [/^\[(?:item|money)\]/i, TEXT_COLOR_PRESETS.itemMoney.color],
     [
-      new RegExp(`^(?:\\[phone\\] )?${characterName} (?:says on the phone\\b|says \\(phone\\))`, "iu"),
-      TEXT_COLOR_PRESETS.phone.color,
+      /^\*\s.+\(\(\s*.+?\s*\)\)\*?$/u,
+      TEXT_COLOR_PRESETS.do.color,
     ],
-    [/^\[phone\]/i, TEXT_COLOR_PRESETS.phone.color],
+    [/^(?:\*|>)\s+/u, TEXT_COLOR_PRESETS.me.color],
     [
-      new RegExp(`^${characterName} (?:says quietly|murmurs)\\b`, "u"),
+      /^(?:You paid \$|.+ paid you \$|You have (?:given|shown) .+\byour\b)/iu,
+      TEXT_COLOR_PRESETS.transaction.color,
+    ],
+    [
+      /^(?:You took \d+ .+ from\b|Info:\s*You took\b|You've just taken\b|You (?:equipped|unequipped|dropped)\b)/iu,
+      TEXT_COLOR_PRESETS.inventory.color,
+    ],
+    [/^\*\*\s*\[S:\s*.+?\]/iu, TEXT_COLOR_PRESETS.radio.color],
+    [/^(?:\*\*\s*)?\[HQ\]|^HQ:/iu, TEXT_COLOR_PRESETS.hq.color],
+    [/^\[PHONE\]/u, TEXT_COLOR_PRESETS.phoneNotice.color],
+    [/^\[INTERCOM\]|^Intercom:/iu, TEXT_COLOR_PRESETS.intercom.color],
+    [/^\[(?:Character kill|CK)\]/iu, TEXT_COLOR_PRESETS.characterKill.color],
+    [
+      /(?:\bsays \[(?:low)\]|\bsays quietly\b|\bmurmurs\b)/iu,
       TEXT_COLOR_PRESETS.low.color,
     ],
-    [new RegExp(`^${characterName} whispers\\b`, "u"), TEXT_COLOR_PRESETS.whisper.color],
-    [new RegExp(`^${characterName} says\\b`, "u"), TEXT_COLOR_PRESETS.say.color],
+    [
+      /(?:\bwhispers(?: to \d+ people)?\b|\bsays whispers\b)/iu,
+      TEXT_COLOR_PRESETS.whisper.color,
+    ],
+    [
+      /(?:\bsays \((?:cell)?phone\):|\bsays on the phone\b|^\(Phone - Loudspeaker\))/iu,
+      TEXT_COLOR_PRESETS.phone.color,
+    ],
+    [
+      /\bshouts(?: \(to .+?\))?:/iu,
+      TEXT_COLOR_PRESETS.say.color,
+    ],
+    [/\bsays(?: \(to .+?\))?(?::|\s)/iu, TEXT_COLOR_PRESETS.say.color],
     [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me.color],
   ];
-  return rules.find(([pattern]) => pattern.test(line))?.[1];
+  return rules.find(([pattern]) => pattern.test(message))?.[1];
 }
 
 function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
@@ -239,7 +269,7 @@ export type Project = Snapshot & {
 };
 
 export function parseColoredText(rawText: string): TextContent {
-  const colorCode = /\{([0-9a-f]{6})\}/gi;
+  const colorCode = /!?\{#?([0-9a-f]{6}|[0-9a-f]{3})\}/gi;
   const colorRuns: TextColorRun[] = [];
   let text = "";
   let sourceIndex = 0;
@@ -252,7 +282,12 @@ export function parseColoredText(rawText: string): TextContent {
     if (activeColor && segment.length > 0) {
       colorRuns.push({ start, end: text.length, color: activeColor });
     }
-    activeColor = `#${match[1].toLowerCase()}`;
+    const hex = match[1].toLowerCase();
+    activeColor = `#${
+      hex.length === 3
+        ? [...hex].map((character) => character.repeat(2)).join("")
+        : hex
+    }`;
     sourceIndex = match.index + match[0].length;
   }
 

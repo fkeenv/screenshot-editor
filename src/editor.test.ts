@@ -18,6 +18,7 @@ import {
   setCanvasSize,
   setView,
   supportedImageFormat,
+  TEXT_COLOR_PRESETS,
   undo,
 } from "./editor";
 
@@ -189,7 +190,7 @@ test("pasted chat lines recognize character actions and regular speech", () => {
 
   expect(content.colorRuns).toEqual([
     { start: 0, end: 32, color: "#c2a3da" },
-    { start: 33, end: 56, color: "#ffffff" },
+    { start: 33, end: 56, color: "#f1f1f1" },
   ]);
 });
 
@@ -197,28 +198,87 @@ test("regular speech recognition does not require a colon after says", () => {
   const content = parseColoredText('John Smith says "Hello."');
 
   expect(content.colorRuns).toEqual([
-    { start: 0, end: 24, color: "#ffffff" },
+    { start: 0, end: 24, color: "#f1f1f1" },
   ]);
 });
 
-test("pasted chat lines recognize the supported SA-MP message types", () => {
+test("GTA World presets use the documented chat colors", () => {
+  expect(TEXT_COLOR_PRESETS).toMatchObject({
+    me: { color: "#c2a3da" },
+    do: { color: "#c2a3da" },
+    say: { color: "#f1f1f1" },
+    low: { color: "#adadad" },
+    whisper: { color: "#eda841" },
+    phone: { color: "#fbf724" },
+    transaction: { color: "#56d64b" },
+    inventory: { color: "#ffff00" },
+    radio: { color: "#ece3a7" },
+    hq: { color: "#006eff" },
+    phoneNotice: { color: "#ffff00" },
+    intercom: { color: "#3896f3" },
+    characterKill: { color: "#f00000" },
+  });
+});
+
+test("pasted GTA World roleplay lines ignore timestamps when classifying", () => {
   const content = parseColoredText(
     [
-      "* The door is open. ((John Smith))",
-      "John Smith says quietly: Stay close.",
-      "John Smith whispers: Do not move.",
-      "[Phone] John Smith says: Hello.",
-      "[Money] John Smith receives $500.",
+      "[17:22:25] * John Smith opens the door.",
+      "[17:22:26] * The door is open. (( John Smith ))",
+      "[17:22:27] > John Smith checks his watch.",
+      "[17:22:28] John Smith says: Hello.",
+      "[17:22:29] John Smith says [low]: Stay close.",
+      "[17:22:30] John Smith whispers: Do not move.",
+      "[17:22:31] John Smith shouts (to Jane Doe): STOP!",
+      "[17:22:32] John Smith says (cellphone): Hello.",
     ].join("\n"),
   );
 
   expect(content.colorRuns.map((run) => run.color)).toEqual([
     "#c2a3da",
-    "#d0d0d0",
-    "#ffff00",
-    "#ffff99",
-    "#33aa33",
+    "#c2a3da",
+    "#c2a3da",
+    "#f1f1f1",
+    "#adadad",
+    "#eda841",
+    "#f1f1f1",
+    "#fbf724",
   ]);
+});
+
+test("pasted GTA World system lines recognize their separate colors", () => {
+  const content = parseColoredText(
+    [
+      "[17:22:33] You paid $2,000 to Jane Doe (15/AUG/2024 - 23:25:44).",
+      "[17:22:34] You took 1 Smoking Pipe from the vehicle.",
+      "[17:22:35] ** [S: 1 | CH: BASE] John Smith says: Copy.",
+      "[17:22:36] [HQ] Unit requested at Mission Row.",
+      "[17:22:37] [PHONE] Incoming call from John Smith.",
+      "[17:22:38] [INTERCOM] Please proceed to reception.",
+      "[17:22:39] [Character kill] John Smith has been killed.",
+    ].join("\n"),
+  );
+
+  expect(content.colorRuns.map((run) => run.color)).toEqual([
+    "#56d64b",
+    "#ffff00",
+    "#ece3a7",
+    "#006eff",
+    "#ffff00",
+    "#3896f3",
+    "#f00000",
+  ]);
+});
+
+test("GTA World inline color tokens are removed and override inference", () => {
+  const content = parseColoredText(
+    "[17:22:40] !{#FEB822}John Smith whispers: Wait.",
+  );
+
+  expect(content).toEqual({
+    text: "[17:22:40] John Smith whispers: Wait.",
+    colorRuns: [{ start: 11, end: 37, color: "#feb822" }],
+  });
 });
 
 test("a manual color overrides an inferred color only within the selection", () => {
@@ -227,9 +287,9 @@ test("a manual color overrides an inferred color only within the selection", () 
   const colored = colorTextRange(content, 17, 22, "#ff0000");
 
   expect(colored.colorRuns).toEqual([
-    { start: 0, end: 17, color: "#ffffff" },
+    { start: 0, end: 17, color: "#f1f1f1" },
     { start: 17, end: 22, color: "#ff0000" },
-    { start: 22, end: 23, color: "#ffffff" },
+    { start: 22, end: 23, color: "#f1f1f1" },
   ]);
 });
 
@@ -246,9 +306,9 @@ test("replacing selected text keeps surrounding colors and parses pasted codes",
   expect(replaced).toEqual({
     text: "John Smith says: waves.",
     colorRuns: [
-      { start: 0, end: 17, color: "#ffffff" },
+      { start: 0, end: 17, color: "#f1f1f1" },
       { start: 17, end: 22, color: "#c2a3da" },
-      { start: 22, end: 23, color: "#ffffff" },
+      { start: 22, end: 23, color: "#f1f1f1" },
     ],
   });
 });
