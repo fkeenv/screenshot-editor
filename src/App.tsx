@@ -11,16 +11,21 @@ import {
   addTextLayer,
   cropImageLayer,
   editTextLayer,
+  finishLayerOpacity,
   finishImageScale,
   fitImageLayerToCanvas,
   moveLayer,
   nudgeLayer,
   openProject,
+  previewLayerOpacity,
   previewImageScale,
+  renameLayer,
   redo,
+  reorderLayer,
   resizeTextLayer,
   scaleImageLayer,
   setCanvasSize,
+  setLayerVisibility,
   setView,
   SUPPORTED_IMAGE_ACCEPT,
   supportedImageFormat,
@@ -38,6 +43,7 @@ import {
   InlineTextEditor,
   type TextEditorHandle,
 } from "./InlineTextEditor";
+import { LayersPanel } from "./LayersPanel";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -74,7 +80,8 @@ function readImage(file: File): Promise<{
 
       const source = reader.result;
       const image = new Image();
-      image.onerror = () => reject(new Error("The image could not be decoded."));
+      image.onerror = () =>
+        reject(new Error("The image could not be decoded."));
       image.onload = () =>
         resolve({
           source,
@@ -238,16 +245,13 @@ function TextControls({
   const [customColor, setCustomColor] = useState("#ffffff");
 
   function editNumber(
-    property:
-      | "fontSize"
-      | "outlineWidth"
-      | "lineSpacing"
-      | "wrapWidth",
+    property: "fontSize" | "outlineWidth" | "lineSpacing" | "wrapWidth",
     value: string,
     minimum: number,
   ) {
     const number = Number(value);
-    if (Number.isFinite(number)) onEdit({ [property]: Math.max(minimum, number) });
+    if (Number.isFinite(number))
+      onEdit({ [property]: Math.max(minimum, number) });
   }
 
   return (
@@ -429,7 +433,9 @@ export function App() {
       setImportError(undefined);
     } catch (error) {
       setImportError(
-        error instanceof Error ? error.message : "The image could not be imported.",
+        error instanceof Error
+          ? error.message
+          : "The image could not be imported.",
       );
     }
   }
@@ -438,7 +444,8 @@ export function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const border = Number.parseFloat(getComputedStyle(canvas).borderLeftWidth) || 0;
+    const border =
+      Number.parseFloat(getComputedStyle(canvas).borderLeftWidth) || 0;
     const x = (event.clientX - rect.left - border) / project.zoom;
     const y = (event.clientY - rect.top - border) / project.zoom;
     if (x < 0 || y < 0 || x > project.canvasWidth || y > project.canvasHeight) {
@@ -657,17 +664,18 @@ export function App() {
     function onKeyDown(event: KeyboardEvent) {
       if (
         event.target instanceof HTMLElement &&
-        event.target.matches("input, textarea, select, button, [contenteditable='true']")
+        event.target.matches(
+          "input, textarea, select, button, [contenteditable='true']",
+        )
       ) {
         return;
       }
 
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.key.toLowerCase() === "z"
-      ) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        setProject((current) => (event.shiftKey ? redo(current) : undo(current)));
+        setProject((current) =>
+          event.shiftKey ? redo(current) : undo(current),
+        );
         return;
       }
 
@@ -678,9 +686,7 @@ export function App() {
 
       if (
         !selectedLayerId ||
-        !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-          event.key,
-        )
+        !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
       ) {
         return;
       }
@@ -729,7 +735,8 @@ export function App() {
             ))}
           </nav>
           <span className="document-status">
-            {project.canvasWidth}×{project.canvasHeight} · {Math.round(project.zoom * 100)}%
+            {project.canvasWidth}×{project.canvasHeight} ·{" "}
+            {Math.round(project.zoom * 100)}%
           </span>
         </div>
 
@@ -851,7 +858,9 @@ export function App() {
                   />
                 </>
               ) : (
-                <span className="tool-hint">Import or select an image to scale and crop it.</span>
+                <span className="tool-hint">
+                  Import or select an image to scale and crop it.
+                </span>
               )}
             </>
           ) : null}
@@ -902,11 +911,19 @@ export function App() {
 
           {activeMenu === "View" ? (
             <div className="control-group">
-              <button type="button" onClick={() => changeZoom(project.zoom / 1.25)}>
+              <button
+                type="button"
+                onClick={() => changeZoom(project.zoom / 1.25)}
+              >
                 Zoom out
               </button>
-              <span className="zoom-value">{Math.round(project.zoom * 100)}%</span>
-              <button type="button" onClick={() => changeZoom(project.zoom * 1.25)}>
+              <span className="zoom-value">
+                {Math.round(project.zoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => changeZoom(project.zoom * 1.25)}
+              >
                 Zoom in
               </button>
             </div>
@@ -916,136 +933,179 @@ export function App() {
         </div>
       </header>
 
-      <div
-        className={`viewport${placingText ? " placing-text" : ""}`}
-        onPointerDown={onViewportPointerDown}
-      >
+      <main className="workspace">
         <div
-          className="canvas"
-          ref={canvasRef}
-          onPointerDown={(event) => {
-            if (!placingText) return;
-            event.stopPropagation();
-            placeTextBox(event);
-          }}
-          style={{
-            width: project.canvasWidth,
-            height: project.canvasHeight,
-            transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
-          }}
+          className={`viewport${placingText ? " placing-text" : ""}`}
+          onPointerDown={onViewportPointerDown}
         >
-          {project.layers.map((layer) =>
-            layer.kind === "image" ? (
-              <div
-                className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
-                key={layer.id}
-                style={{
-                  left: layer.x,
-                  top: layer.y,
-                  width: layer.crop.width * layer.scale,
-                  height: layer.crop.height * layer.scale,
-                }}
-                title={layer.name}
-                onPointerDown={(event) => onLayerPointerDown(event, layer)}
-              >
-                <img
-                  src={layer.source}
-                  alt=""
-                  draggable={false}
-                  style={{
-                    width: layer.naturalWidth * layer.scale,
-                    height: layer.naturalHeight * layer.scale,
-                    left: -layer.crop.x * layer.scale,
-                    top: -layer.crop.y * layer.scale,
-                  }}
-                />
-              </div>
-            ) : (
-              <div
-                className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
-                key={layer.id}
-                style={{
-                  left:
-                    layer.x -
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH
-                      : 0),
-                  top:
-                    layer.y -
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH
-                      : 0),
-                  width:
-                    layer.wrapWidth +
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH * 2
-                      : 0),
-                  minHeight:
-                    layer.fontSize * layer.lineSpacing +
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH * 2
-                      : 0),
-                  padding:
-                    editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH
-                      : 0,
-                  fontFamily: layer.fontFamily,
-                  fontSize: layer.fontSize,
-                  fontWeight: layer.bold ? 700 : 400,
-                  lineHeight: layer.lineSpacing,
-                  WebkitTextStroke: `${layer.outlineWidth}px ${layer.outlineColor}`,
-                }}
-                title={layer.name}
-                onPointerDown={(event) => onLayerPointerDown(event, layer)}
-                onDoubleClick={(event) => {
-                  event.stopPropagation();
-                  beginTextEditing(layer.id);
-                }}
-              >
-                {selectedLayerId === layer.id
-                  ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
-                      <span
-                        key={corner}
-                        className={`text-resize-handle ${corner}`}
-                        onPointerDown={(event) => resizeTextBox(event, layer, corner)}
-                      />
-                    ))
-                  : null}
-                {editingTextLayerId === layer.id ? (
-                  <InlineTextEditor
-                    layer={layer}
-                    selectText={selectTextOnEdit}
-                    editorHandle={textEditor}
-                    onSelectionChange={setHasTextSelection}
-                    onColorCommit={(previous, next) =>
-                      setProject((current) => {
-                        const withPendingText = editTextLayer(
-                          current,
-                          layer.id,
-                          previous,
-                        );
-                        return editTextLayer(withPendingText, layer.id, next);
-                      })
-                    }
-                    onHistory={(shouldRedo) =>
-                      setProject((current) =>
-                        shouldRedo ? redo(current) : undo(current),
-                      )
-                    }
-                    onCommit={(content) => finishTextEditing(layer.id, content)}
-                    onCancel={cancelTextEditing}
-                  />
+          <div
+            className="canvas"
+            ref={canvasRef}
+            onPointerDown={(event) => {
+              if (!placingText) return;
+              event.stopPropagation();
+              placeTextBox(event);
+            }}
+            style={{
+              width: project.canvasWidth,
+              height: project.canvasHeight,
+              transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
+            }}
+          >
+            {project.layers
+              .filter((layer) => layer.visible)
+              .map((layer) =>
+                layer.kind === "image" ? (
+                  <div
+                    className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                    key={layer.id}
+                    style={{
+                      left: layer.x,
+                      top: layer.y,
+                      width: layer.crop.width * layer.scale,
+                      height: layer.crop.height * layer.scale,
+                      opacity: layer.opacity,
+                    }}
+                    title={layer.name}
+                    onPointerDown={(event) => onLayerPointerDown(event, layer)}
+                  >
+                    <img
+                      src={layer.source}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        width: layer.naturalWidth * layer.scale,
+                        height: layer.naturalHeight * layer.scale,
+                        left: -layer.crop.x * layer.scale,
+                        top: -layer.crop.y * layer.scale,
+                      }}
+                    />
+                  </div>
                 ) : (
-                  <ColoredText text={layer.text} colorRuns={layer.colorRuns} />
-                )}
-              </div>
-            ),
-          )}
-          <span className="canvas-size">
-            {project.canvasWidth}×{project.canvasHeight}
-          </span>
+                  <div
+                    className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
+                    key={layer.id}
+                    style={{
+                      left:
+                        layer.x -
+                        (editingTextLayerId === layer.id
+                          ? TEXT_EDIT_FRAME_WIDTH
+                          : 0),
+                      top:
+                        layer.y -
+                        (editingTextLayerId === layer.id
+                          ? TEXT_EDIT_FRAME_WIDTH
+                          : 0),
+                      width:
+                        layer.wrapWidth +
+                        (editingTextLayerId === layer.id
+                          ? TEXT_EDIT_FRAME_WIDTH * 2
+                          : 0),
+                      minHeight:
+                        layer.fontSize * layer.lineSpacing +
+                        (editingTextLayerId === layer.id
+                          ? TEXT_EDIT_FRAME_WIDTH * 2
+                          : 0),
+                      padding:
+                        editingTextLayerId === layer.id
+                          ? TEXT_EDIT_FRAME_WIDTH
+                          : 0,
+                      fontFamily: layer.fontFamily,
+                      fontSize: layer.fontSize,
+                      fontWeight: layer.bold ? 700 : 400,
+                      lineHeight: layer.lineSpacing,
+                      WebkitTextStroke: `${layer.outlineWidth}px ${layer.outlineColor}`,
+                      opacity: layer.opacity,
+                    }}
+                    title={layer.name}
+                    onPointerDown={(event) => onLayerPointerDown(event, layer)}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      beginTextEditing(layer.id);
+                    }}
+                  >
+                    {selectedLayerId === layer.id
+                      ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
+                          <span
+                            key={corner}
+                            className={`text-resize-handle ${corner}`}
+                            onPointerDown={(event) =>
+                              resizeTextBox(event, layer, corner)
+                            }
+                          />
+                        ))
+                      : null}
+                    {editingTextLayerId === layer.id ? (
+                      <InlineTextEditor
+                        layer={layer}
+                        selectText={selectTextOnEdit}
+                        editorHandle={textEditor}
+                        onSelectionChange={setHasTextSelection}
+                        onColorCommit={(previous, next) =>
+                          setProject((current) => {
+                            const withPendingText = editTextLayer(
+                              current,
+                              layer.id,
+                              previous,
+                            );
+                            return editTextLayer(
+                              withPendingText,
+                              layer.id,
+                              next,
+                            );
+                          })
+                        }
+                        onHistory={(shouldRedo) =>
+                          setProject((current) =>
+                            shouldRedo ? redo(current) : undo(current),
+                          )
+                        }
+                        onCommit={(content) =>
+                          finishTextEditing(layer.id, content)
+                        }
+                        onCancel={cancelTextEditing}
+                      />
+                    ) : (
+                      <ColoredText
+                        text={layer.text}
+                        colorRuns={layer.colorRuns}
+                      />
+                    )}
+                  </div>
+                ),
+              )}
+            <span className="canvas-size">
+              {project.canvasWidth}×{project.canvasHeight}
+            </span>
+          </div>
         </div>
-      </div>
+        <LayersPanel
+          layers={project.layers}
+          selectedLayerId={selectedLayerId}
+          onSelect={setSelectedLayerId}
+          onReorder={(layerId, targetIndex) =>
+            setProject((current) => reorderLayer(current, layerId, targetIndex))
+          }
+          onRename={(layerId, name) =>
+            setProject((current) => renameLayer(current, layerId, name))
+          }
+          onVisibilityChange={(layerId, visible) =>
+            setProject((current) =>
+              setLayerVisibility(current, layerId, visible),
+            )
+          }
+          onOpacityPreview={(layerId, opacity) =>
+            setProject((current) =>
+              previewLayerOpacity(current, layerId, opacity),
+            )
+          }
+          onOpacityCommit={(layerId, previousOpacity) =>
+            setProject((current) =>
+              finishLayerOpacity(current, layerId, previousOpacity),
+            )
+          }
+        />
+      </main>
     </div>
   );
 }

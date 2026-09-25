@@ -290,10 +290,19 @@ button.active-control {
 
 .viewport {
   position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
   cursor: grab;
   background: #09090b;
   touch-action: none;
+}
+
+.workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
 
 .viewport:active {

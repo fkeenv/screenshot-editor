@@ -21,6 +21,8 @@ export type ImageLayer = {
   id: string;
   kind: "image";
   name: string;
+  visible: boolean;
+  opacity: number;
   source: string;
   format: ImageFormat;
   naturalWidth: number;
@@ -68,10 +70,7 @@ function inferredLineColor(line: string): string | undefined {
   const characterName =
     "(?:[\\p{L}][\\p{L}'-]*(?: |_)[\\p{L}][\\p{L}'-]*|Mask(?:_[\\p{L}\\p{N}]+)+)";
   const rules: [RegExp, string][] = [
-    [
-      /^\*\s.+\(\(\s*.+?\s*\)\)\*?$/u,
-      TEXT_COLOR_PRESETS.do.color,
-    ],
+    [/^\*\s.+\(\(\s*.+?\s*\)\)\*?$/u, TEXT_COLOR_PRESETS.do.color],
     [/^(?:\*|>)\s+/u, TEXT_COLOR_PRESETS.me.color],
     [
       /^(?:You paid \$|.+ paid you \$|You have (?:given|shown) .+\byour\b)/iu,
@@ -98,12 +97,12 @@ function inferredLineColor(line: string): string | undefined {
       /(?:\bsays \((?:cell)?phone\):|\bsays on the phone\b|^\(Phone - Loudspeaker\))/iu,
       TEXT_COLOR_PRESETS.phone.color,
     ],
-    [
-      /\bshouts(?: \(to .+?\))?:/iu,
-      TEXT_COLOR_PRESETS.say.color,
-    ],
+    [/\bshouts(?: \(to .+?\))?:/iu, TEXT_COLOR_PRESETS.say.color],
     [/\bsays(?: \(to .+?\))?(?::|\s)/iu, TEXT_COLOR_PRESETS.say.color],
-    [new RegExp(`^(?:\\* )?${characterName} `, "u"), TEXT_COLOR_PRESETS.me.color],
+    [
+      new RegExp(`^(?:\\* )?${characterName} `, "u"),
+      TEXT_COLOR_PRESETS.me.color,
+    ],
   ];
   return rules.find(([pattern]) => pattern.test(message))?.[1];
 }
@@ -138,8 +137,7 @@ export function contentToDocument(content: TextContent): RichTextNode {
         const end = boundaries[index + 1];
         if (start === undefined || end === undefined || start === end) continue;
         const color = runs.find(
-          (run) =>
-            run.start <= lineStart + start && run.end >= lineStart + end,
+          (run) => run.start <= lineStart + start && run.end >= lineStart + end,
         )?.color;
         nodes.push({
           type: "text",
@@ -166,8 +164,8 @@ export function documentToContent(document: RichTextNode): TextContent {
       if (!node.text) continue;
       const start = text.length;
       text += node.text;
-      const color = node.marks?.find((mark) => mark.type === "textStyle")
-        ?.attrs?.color;
+      const color = node.marks?.find((mark) => mark.type === "textStyle")?.attrs
+        ?.color;
       if (color) colorRuns.push({ start, end: text.length, color });
     }
   }
@@ -193,7 +191,11 @@ function mergeColorRuns(runs: TextColorRun[]): TextColorRun[] {
   for (const run of [...runs].sort((left, right) => left.start - right.start)) {
     if (run.end <= run.start) continue;
     const previous = merged.at(-1);
-    if (previous && previous.end === run.start && previous.color === run.color) {
+    if (
+      previous &&
+      previous.end === run.start &&
+      previous.color === run.color
+    ) {
       previous.end = run.end;
     } else {
       merged.push({ ...run });
@@ -293,9 +295,7 @@ export function replaceTextRange(
 
   return {
     text:
-      content.text.slice(0, start) +
-      replacement.text +
-      content.text.slice(end),
+      content.text.slice(0, start) + replacement.text + content.text.slice(end),
     colorRuns: mergeColorRuns(colorRuns),
   };
 }
@@ -304,6 +304,8 @@ export type TextLayer = {
   id: string;
   kind: "text";
   name: string;
+  visible: boolean;
+  opacity: number;
   text: string;
   colorRuns: TextColorRun[];
   x: number;
@@ -484,6 +486,8 @@ export function addImageLayer(
     id: image.id,
     kind: "image",
     name: image.name,
+    visible: true,
+    opacity: 1,
     source: image.source,
     format: image.format,
     naturalWidth: image.width,
@@ -509,6 +513,8 @@ export function addTextLayer(
     id,
     kind: "text",
     name: "Text",
+    visible: true,
+    opacity: 1,
     text: "Text",
     colorRuns: [],
     x: position.x,
@@ -571,6 +577,114 @@ export function moveLayer(
   });
 
   return changed ? commit(project, { ...snapshot(project), layers }) : project;
+}
+
+export function reorderLayer(
+  project: Project,
+  layerId: string,
+  targetIndex: number,
+): Project {
+  const currentIndex = project.layers.findIndex(
+    (layer) => layer.id === layerId,
+  );
+  if (currentIndex < 0 || !Number.isFinite(targetIndex)) return project;
+  const destination = clamp(
+    Math.trunc(targetIndex),
+    0,
+    project.layers.length - 1,
+  );
+  if (currentIndex === destination) return project;
+
+  const layers = [...project.layers];
+  const [layer] = layers.splice(currentIndex, 1);
+  if (!layer) return project;
+  layers.splice(destination, 0, layer);
+  return commit(project, { ...snapshot(project), layers });
+}
+
+export function setLayerVisibility(
+  project: Project,
+  layerId: string,
+  visible: boolean,
+): Project {
+  return updateAnyLayer(project, layerId, (layer) =>
+    layer.visible === visible ? layer : { ...layer, visible },
+  );
+}
+
+export function renameLayer(
+  project: Project,
+  layerId: string,
+  name: string,
+): Project {
+  return updateAnyLayer(project, layerId, (layer) =>
+    layer.name === name ? layer : { ...layer, name },
+  );
+}
+
+export function setLayerOpacity(
+  project: Project,
+  layerId: string,
+  opacity: number,
+): Project {
+  const normalizedOpacity = clamp(opacity, 0, 1);
+  return updateAnyLayer(project, layerId, (layer) =>
+    layer.opacity === normalizedOpacity
+      ? layer
+      : { ...layer, opacity: normalizedOpacity },
+  );
+}
+
+export function previewLayerOpacity(
+  project: Project,
+  layerId: string,
+  opacity: number,
+): Project {
+  const normalizedOpacity = clamp(opacity, 0, 1);
+  return updateAnyLayer(
+    project,
+    layerId,
+    (layer) =>
+      layer.opacity === normalizedOpacity
+        ? layer
+        : { ...layer, opacity: normalizedOpacity },
+    false,
+  );
+}
+
+export function finishLayerOpacity(
+  project: Project,
+  layerId: string,
+  previousOpacity: number,
+): Project {
+  const finalOpacity = project.layers.find(
+    (layer) => layer.id === layerId,
+  )?.opacity;
+  if (finalOpacity === undefined || finalOpacity === previousOpacity) {
+    return project;
+  }
+
+  const beforeGesture = previewLayerOpacity(project, layerId, previousOpacity);
+  return setLayerOpacity(beforeGesture, layerId, finalOpacity);
+}
+
+function updateAnyLayer(
+  project: Project,
+  layerId: string,
+  update: (layer: Layer) => Layer,
+  recordHistory = true,
+): Project {
+  let changed = false;
+  const layers = project.layers.map((layer) => {
+    if (layer.id !== layerId) return layer;
+    const next = update(layer);
+    changed = next !== layer;
+    return next;
+  });
+  if (!changed) return project;
+  return recordHistory
+    ? commit(project, { ...snapshot(project), layers })
+    : { ...project, layers };
 }
 
 export function nudgeLayer(
