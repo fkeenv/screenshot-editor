@@ -46,6 +46,11 @@ import {
   InlineTextEditor,
   type TextEditorHandle,
 } from "./InlineTextEditor";
+import {
+  exportFlattened,
+  type ExportFormat,
+  type ExportOptions,
+} from "./export";
 import { LayersPanel } from "./LayersPanel";
 
 const PRESETS = [
@@ -97,16 +102,40 @@ function readImage(file: File): Promise<{
   });
 }
 
-function downloadProject(project: Project) {
-  const blob = new Blob([saveProject(project)], {
-    type: "application/json",
-  });
+const EXPORT_EXTENSION: Record<ExportFormat, string> = {
+  png: "png",
+  jpeg: "jpg",
+  webp: "webp",
+};
+
+function showsExportQuality(format: ExportFormat, lossless: boolean): boolean {
+  return format === "jpeg" || (format === "webp" && !lossless);
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "untitled.screenshot-project.json";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+async function downloadExport(project: Project, options: ExportOptions) {
+  const exported = await exportFlattened(project, options);
+  const copy = new Uint8Array(exported.bytes.byteLength);
+  copy.set(exported.bytes);
+  downloadBlob(
+    new Blob([copy.buffer], { type: exported.mediaType }),
+    `screenshot.${EXPORT_EXTENSION[options.format]}`,
+  );
+}
+
+function downloadProject(project: Project) {
+  downloadBlob(
+    new Blob([saveProject(project)], { type: "application/json" }),
+    "untitled.screenshot-project.json",
+  );
 }
 
 function CropControls({
@@ -391,6 +420,10 @@ export function App() {
   const [selectedLayerId, setSelectedLayerId] = useState<string>();
   const [importError, setImportError] = useState<string>();
   const [projectFileError, setProjectFileError] = useState<string>();
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
+  const [exportQuality, setExportQuality] = useState(80);
+  const [exportLossless, setExportLossless] = useState(false);
+  const [exportError, setExportError] = useState<string>();
   const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
@@ -834,6 +867,72 @@ export function App() {
               <span className="tool-hint">
                 Projects keep editable layers · Images: JPG, PNG, WebP, GIF, or BMP
               </span>
+              <span className="tool-divider" />
+              <label>
+                Export
+                <select
+                  value={exportFormat}
+                  onChange={(event) =>
+                    setExportFormat(event.target.value as ExportFormat)
+                  }
+                >
+                  <option value="png">PNG</option>
+                  <option value="jpeg">JPG</option>
+                  <option value="webp">WebP</option>
+                </select>
+              </label>
+              {exportFormat === "webp" ? (
+                <label className="check-option">
+                  <input
+                    type="checkbox"
+                    checked={exportLossless}
+                    onChange={(event) => setExportLossless(event.target.checked)}
+                  />
+                  Lossless
+                </label>
+              ) : null}
+              {showsExportQuality(exportFormat, exportLossless) ? (
+                <>
+                  <label className="scale-control">
+                    Quality
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      step="1"
+                      value={exportQuality}
+                      onChange={(event) =>
+                        setExportQuality(Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <output>{exportQuality}</output>
+                </>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void downloadExport(project, {
+                    format: exportFormat,
+                    quality: exportQuality,
+                    lossless: exportFormat === "webp" && exportLossless,
+                  }).then(
+                    () => setExportError(undefined),
+                    (error: unknown) =>
+                      setExportError(
+                        error instanceof Error
+                          ? error.message
+                          : "The image could not be exported.",
+                      ),
+                  );
+                }}
+              >
+                Export
+              </button>
+              <span className="tool-hint">
+                PNG stays sharp and can be transparent. JPG is opaque. Lower
+                quality makes JPG and WebP smaller.
+              </span>
             </div>
           ) : null}
 
@@ -1022,6 +1121,7 @@ export function App() {
           {projectFileError ? (
             <p className="import-error">{projectFileError}</p>
           ) : null}
+          {exportError ? <p className="import-error">{exportError}</p> : null}
         </div>
       </header>
 
