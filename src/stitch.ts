@@ -1,10 +1,13 @@
 import type { ImageLayer, Project } from "./editor";
-import { exportFlattened } from "./export";
+import { browserExportRuntime, type ExportRuntime } from "./export";
 
-export async function stitchProjects(projects: Project[]): Promise<Project> {
+export async function stitchProjects(
+  projects: Project[],
+  exportRuntime: ExportRuntime = browserExportRuntime,
+): Promise<Project> {
   const screens = await Promise.all(
     projects.map(async (project) => {
-      const exported = await exportFlattened(project, {
+      const exported = await exportRuntime.exportFlattened(project, {
         format: "png",
         quality: 100,
       });

@@ -50,70 +50,116 @@ type DrawContext = {
   getImageData(x: number, y: number, width: number, height: number): ImageData;
 };
 
-type Raster = {
+export type ExportRaster = {
   getContext(kind: "2d"): DrawContext | null;
 };
 
-type ExportEnvironment = {
-  createRaster(width: number, height: number): Raster | Promise<Raster>;
+type EncodedBytes = ArrayBuffer | Uint8Array;
+
+export type ExportCodecs = {
+  encodePng(image: ImageData): Promise<EncodedBytes>;
+  encodeJpeg(
+    image: ImageData,
+    options: { quality: number },
+  ): Promise<EncodedBytes>;
+  encodeWebp(
+    image: ImageData,
+    options: { quality: number; lossless: number; exact: number },
+  ): Promise<EncodedBytes>;
+};
+
+export type ExportRuntimeAdapter = {
+  initializeCodecs(): Promise<ExportCodecs>;
+  createRaster(
+    width: number,
+    height: number,
+  ): ExportRaster | Promise<ExportRaster>;
   loadImage(source: string): Promise<CanvasImageSource>;
 };
 
-let startCodecs: (() => Promise<void>) | undefined;
-let codecsReady: Promise<void> | undefined;
-let environment: ExportEnvironment | undefined;
+export type ExportRuntime = {
+  exportFlattened(
+    project: Project,
+    options: ExportOptions,
+  ): Promise<ExportedImage>;
+};
 
-export function prepareExportCodecs(start: () => Promise<void>) {
-  startCodecs = start;
-  codecsReady = undefined;
+export function createExportRuntime(
+  adapter: ExportRuntimeAdapter,
+): ExportRuntime {
+  let codecsReady: Promise<ExportCodecs> | undefined;
+
+  return {
+    async exportFlattened(project, options) {
+      codecsReady ??= Promise.resolve().then(() => adapter.initializeCodecs());
+      const codecs = await codecsReady;
+      return exportWithAdapter(project, options, adapter, codecs);
+    },
+  };
 }
 
-export function prepareExportEnvironment(next: ExportEnvironment) {
-  environment = next;
-}
-
-async function ensureCodecs() {
-  if (!startCodecs) return;
-  codecsReady ??= startCodecs();
-  await codecsReady;
-}
-
-async function createRaster(width: number, height: number): Promise<Raster> {
-  if (environment) return environment.createRaster(width, height);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  return canvas as Raster;
-}
+export const browserExportRuntime = createExportRuntime({
+  async initializeCodecs() {
+    return { encodePng, encodeJpeg, encodeWebp };
+  },
+  createRaster(width, height) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    return canvas as ExportRaster;
+  },
+  loadImage(source) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("The image could not be exported."));
+      image.src = source;
+    });
+  },
+});
 
 export async function exportFlattened(
   project: Project,
   options: ExportOptions,
 ): Promise<ExportedImage> {
-  await ensureCodecs();
-  const raster = await createRaster(project.canvasWidth, project.canvasHeight);
+  return browserExportRuntime.exportFlattened(project, options);
+}
+
+async function exportWithAdapter(
+  project: Project,
+  options: ExportOptions,
+  adapter: ExportRuntimeAdapter,
+  codecs: ExportCodecs,
+): Promise<ExportedImage> {
+  const raster = await adapter.createRaster(
+    project.canvasWidth,
+    project.canvasHeight,
+  );
   const context = raster.getContext("2d");
   if (!context) throw new Error("The canvas could not be exported.");
   if (options.format === "jpeg") {
     context.fillStyle = JPEG_BACKGROUND;
     context.fillRect(0, 0, project.canvasWidth, project.canvasHeight);
   }
-  await paintLayers(context, project);
+  await paintLayers(context, project, adapter);
   const image = context.getImageData(
     0,
     0,
     project.canvasWidth,
     project.canvasHeight,
   );
-  const bytes = await encodeRaster(image, options);
+  const bytes = await encodeRaster(image, options, codecs);
   return { bytes, mediaType: MEDIA_TYPE[options.format] };
 }
 
-async function paintLayers(context: DrawContext, project: Project) {
+async function paintLayers(
+  context: DrawContext,
+  project: Project,
+  adapter: ExportRuntimeAdapter,
+) {
   for (const layer of project.layers) {
     if (!layer.visible) continue;
-    if (layer.kind === "image") await paintImage(context, layer);
+    if (layer.kind === "image") await paintImage(context, layer, adapter);
     else paintText(context, layer);
   }
 }
@@ -219,8 +265,12 @@ function textColor(layer: TextLayer, index: number): string {
   );
 }
 
-async function paintImage(context: DrawContext, layer: ImageLayer) {
-  const image = await loadSource(layer.source);
+async function paintImage(
+  context: DrawContext,
+  layer: ImageLayer,
+  adapter: ExportRuntimeAdapter,
+) {
+  const image = await adapter.loadImage(layer.source);
   context.globalAlpha = layer.opacity;
   context.drawImage(
     image,
@@ -236,17 +286,6 @@ async function paintImage(context: DrawContext, layer: ImageLayer) {
   context.globalAlpha = 1;
 }
 
-async function loadSource(source: string): Promise<CanvasImageSource> {
-  if (environment) return environment.loadImage(source);
-
-  return await new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("The image could not be exported."));
-    image.src = source;
-  });
-}
-
 function clampQuality(quality: number): number {
   if (!Number.isFinite(quality)) return 80;
   return Math.min(100, Math.max(1, Math.round(quality)));
@@ -255,19 +294,20 @@ function clampQuality(quality: number): number {
 async function encodeRaster(
   image: ImageData,
   options: ExportOptions,
+  codecs: ExportCodecs,
 ): Promise<Uint8Array> {
   const quality = clampQuality(options.quality);
   if (options.format === "jpeg") {
-    return new Uint8Array(await encodeJpeg(image, { quality }));
+    return new Uint8Array(await codecs.encodeJpeg(image, { quality }));
   }
   if (options.format === "webp") {
     return new Uint8Array(
-      await encodeWebp(image, {
+      await codecs.encodeWebp(image, {
         quality,
         lossless: options.lossless ? 1 : 0,
         exact: options.lossless ? 1 : 0,
       }),
     );
   }
-  return new Uint8Array(await encodePng(image));
+  return new Uint8Array(await codecs.encodePng(image));
 }
