@@ -32,6 +32,11 @@ type DrawContext = {
   textBaseline: CanvasTextBaseline;
   lineWidth: number;
   lineJoin: CanvasLineJoin;
+  save(): void;
+  restore(): void;
+  beginPath(): void;
+  rect(x: number, y: number, width: number, height: number): void;
+  clip(): void;
   fillRect(x: number, y: number, width: number, height: number): void;
   fillText(text: string, x: number, y: number): void;
   strokeText(text: string, x: number, y: number): void;
@@ -82,6 +87,10 @@ export type ExportRuntime = {
     project: Project,
     options: ExportOptions,
   ): Promise<ExportedImage>;
+  exportStitch(
+    projects: Project[],
+    options: ExportOptions,
+  ): Promise<ExportedImage>;
 };
 
 export function createExportRuntime(
@@ -94,6 +103,26 @@ export function createExportRuntime(
       codecsReady ??= Promise.resolve().then(() => adapter.initializeCodecs());
       const codecs = await codecsReady;
       return exportWithAdapter(project, options, adapter, codecs);
+    },
+    async exportStitch(projects, options) {
+      if (projects.length < 2) {
+        throw new Error(
+          "Choose at least two saved screens to export a stitch.",
+        );
+      }
+      try {
+        codecsReady ??= Promise.resolve().then(() => adapter.initializeCodecs());
+        const codecs = await codecsReady;
+        return await exportStitchWithAdapter(
+          projects,
+          options,
+          adapter,
+          codecs,
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? ` ${error.message}` : "";
+        throw new Error(`The stitch could not be exported.${reason}`);
+      }
     },
   };
 }
@@ -131,23 +160,68 @@ async function exportWithAdapter(
   adapter: ExportRuntimeAdapter,
   codecs: ExportCodecs,
 ): Promise<ExportedImage> {
-  const raster = await adapter.createRaster(
+  return exportRaster(
     project.canvasWidth,
     project.canvasHeight,
+    options,
+    adapter,
+    codecs,
+    (context) => paintLayers(context, project, adapter),
   );
+}
+
+async function exportStitchWithAdapter(
+  projects: Project[],
+  options: ExportOptions,
+  adapter: ExportRuntimeAdapter,
+  codecs: ExportCodecs,
+): Promise<ExportedImage> {
+  const width = Math.max(...projects.map((project) => project.canvasWidth));
+  const height = projects.reduce(
+    (total, project) => total + project.canvasHeight,
+    0,
+  );
+  return exportRaster(
+    width,
+    height,
+    options,
+    adapter,
+    codecs,
+    async (context) => {
+      let offsetY = 0;
+      for (const project of projects) {
+        context.save();
+        try {
+          context.beginPath();
+          context.rect(0, offsetY, project.canvasWidth, project.canvasHeight);
+          context.clip();
+          await paintLayers(context, project, adapter, 0, offsetY);
+        } finally {
+          context.restore();
+        }
+        offsetY += project.canvasHeight;
+      }
+    },
+  );
+}
+
+async function exportRaster(
+  width: number,
+  height: number,
+  options: ExportOptions,
+  adapter: ExportRuntimeAdapter,
+  codecs: ExportCodecs,
+  paint: (context: DrawContext) => Promise<void>,
+): Promise<ExportedImage> {
+  const raster = await adapter.createRaster(width, height);
   const context = raster.getContext("2d");
   if (!context) throw new Error("The canvas could not be exported.");
   if (options.format === "jpeg") {
     context.fillStyle = JPEG_BACKGROUND;
-    context.fillRect(0, 0, project.canvasWidth, project.canvasHeight);
+    context.fillRect(0, 0, width, height);
   }
-  await paintLayers(context, project, adapter);
-  const image = context.getImageData(
-    0,
-    0,
-    project.canvasWidth,
-    project.canvasHeight,
-  );
+  await paint(context);
+  const image = context.getImageData(0, 0, width, height);
   const bytes = await encodeRaster(image, options, codecs);
   return { bytes, mediaType: MEDIA_TYPE[options.format] };
 }
@@ -156,15 +230,25 @@ async function paintLayers(
   context: DrawContext,
   project: Project,
   adapter: ExportRuntimeAdapter,
+  offsetX = 0,
+  offsetY = 0,
 ) {
   for (const layer of project.layers) {
     if (!layer.visible) continue;
-    if (layer.kind === "image") await paintImage(context, layer, adapter);
-    else paintText(context, layer);
+    if (layer.kind === "image") {
+      await paintImage(context, layer, adapter, offsetX, offsetY);
+    } else {
+      paintText(context, layer, offsetX, offsetY);
+    }
   }
 }
 
-function paintText(context: DrawContext, layer: TextLayer) {
+function paintText(
+  context: DrawContext,
+  layer: TextLayer,
+  offsetX: number,
+  offsetY: number,
+) {
   context.globalAlpha = layer.opacity;
   context.font = canvasFont(layer);
   context.textBaseline = "top";
@@ -179,8 +263,8 @@ function paintText(context: DrawContext, layer: TextLayer) {
       layer,
       line.start,
       line.end,
-      layer.x,
-      layer.y + index * lineHeight,
+      layer.x + offsetX,
+      layer.y + offsetY + index * lineHeight,
     );
   });
   context.globalAlpha = 1;
@@ -269,6 +353,8 @@ async function paintImage(
   context: DrawContext,
   layer: ImageLayer,
   adapter: ExportRuntimeAdapter,
+  offsetX: number,
+  offsetY: number,
 ) {
   const image = await adapter.loadImage(layer.source);
   context.globalAlpha = layer.opacity;
@@ -278,8 +364,8 @@ async function paintImage(
     layer.crop.y,
     layer.crop.width,
     layer.crop.height,
-    layer.x,
-    layer.y,
+    layer.x + offsetX,
+    layer.y + offsetY,
     layer.crop.width * layer.scale,
     layer.crop.height * layer.scale,
   );

@@ -41,14 +41,15 @@ import {
   type TextLayer,
   type TextLayerEdit,
 } from "./editor";
-import { stitchProjects } from "./stitch";
 import {
   ColoredText,
   InlineTextEditor,
   type TextEditorHandle,
 } from "./InlineTextEditor";
 import {
+  browserExportRuntime,
   exportFlattened,
+  type ExportedImage,
   type ExportFormat,
   type ExportOptions,
 } from "./export";
@@ -134,11 +135,19 @@ async function downloadExport(
   filename = "screenshot",
 ) {
   const exported = await exportFlattened(project, options);
+  downloadExportedImage(exported, options.format, filename);
+}
+
+function downloadExportedImage(
+  exported: ExportedImage,
+  format: ExportFormat,
+  filename: string,
+) {
   const copy = new Uint8Array(exported.bytes.byteLength);
   copy.set(exported.bytes);
   downloadBlob(
     new Blob([copy.buffer], { type: exported.mediaType }),
-    `${filename}.${EXPORT_EXTENSION[options.format]}`,
+    `${filename}.${EXPORT_EXTENSION[format]}`,
   );
 }
 
@@ -147,7 +156,6 @@ function ExportChoices({
   quality,
   lossless,
   actionLabel,
-  disabled = false,
   onFormat,
   onQuality,
   onLossless,
@@ -157,7 +165,6 @@ function ExportChoices({
   quality: number;
   lossless: boolean;
   actionLabel: string;
-  disabled?: boolean;
   onFormat: (format: ExportFormat) => void;
   onQuality: (quality: number) => void;
   onLossless: (lossless: boolean) => void;
@@ -202,7 +209,7 @@ function ExportChoices({
           <output>{quality}</output>
         </>
       ) : null}
-      <button type="button" onClick={onExport} disabled={disabled}>
+      <button type="button" onClick={onExport}>
         {actionLabel}
       </button>
     </>
@@ -662,6 +669,31 @@ export function App() {
     );
   }
 
+  function downloadStitch() {
+    const options: ExportOptions = {
+      format: exportFormat,
+      quality: exportQuality,
+      lossless: exportFormat === "webp" && exportLossless,
+    };
+    void browserExportRuntime
+      .exportStitch(
+        stitchScreens.map((screen) => screen.project),
+        options,
+      )
+      .then(
+        (exported) => {
+          downloadExportedImage(exported, options.format, "stitch");
+          setExportError(undefined);
+        },
+        (error: unknown) =>
+          setExportError(
+            error instanceof Error
+              ? error.message
+              : "The stitch could not be exported.",
+          ),
+      );
+  }
+
   function placeTextBox(event: { clientX: number; clientY: number }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1071,23 +1103,10 @@ export function App() {
                 quality={exportQuality}
                 lossless={exportLossless}
                 actionLabel="Export stitch"
-                disabled={stitchScreens.length < 2}
                 onFormat={setExportFormat}
                 onQuality={setExportQuality}
                 onLossless={setExportLossless}
-                onExport={() => {
-                  void stitchProjects(
-                    stitchScreens.map((screen) => screen.project),
-                  ).then(
-                    (stitched) => downloadProjectImage(stitched, "stitch"),
-                    (error: unknown) =>
-                      setExportError(
-                        error instanceof Error
-                          ? error.message
-                          : "The image could not be exported.",
-                      ),
-                  );
-                }}
+                onExport={downloadStitch}
               />
               <span className="tool-hint">
                 Add saved screens and order them from top to bottom.
