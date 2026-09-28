@@ -828,6 +828,85 @@ function updateAnyLayer(
   );
 }
 
+export type UndoableEditUpdate =
+  | {
+      type: "move-layer";
+      layerId: string;
+      x: number;
+      y: number;
+    }
+  | {
+      type: "resize-text";
+      layerId: string;
+      x: number;
+      wrapWidth: number;
+    }
+  | {
+      type: "pan-viewport";
+      panX: number;
+      panY: number;
+    };
+
+export type UndoableEdit = {
+  preview(update: UndoableEditUpdate): Project;
+  finish(update?: UndoableEditUpdate): Project;
+  cancel(): Project;
+};
+
+export function beginUndoableEdit(project: Project): UndoableEdit {
+  let previewed = project;
+
+  return {
+    preview(update) {
+      previewed = applyUndoableEdit(project, update);
+      return previewed;
+    },
+    finish(update) {
+      if (update) previewed = applyUndoableEdit(project, update);
+      return previewed === project
+        ? project
+        : commit(project, snapshot(previewed));
+    },
+    cancel() {
+      return project;
+    },
+  };
+}
+
+function applyUndoableEdit(
+  project: Project,
+  update: UndoableEditUpdate,
+): Project {
+  if (update.type === "pan-viewport") {
+    return project.panX === update.panX && project.panY === update.panY
+      ? project
+      : { ...project, panX: update.panX, panY: update.panY };
+  }
+
+  if (update.type === "resize-text") {
+    return updateLayer(
+      project,
+      update.layerId,
+      "text",
+      (layer) =>
+        layer.x === update.x && layer.wrapWidth === update.wrapWidth
+          ? layer
+          : { ...layer, x: update.x, wrapWidth: update.wrapWidth },
+      false,
+    );
+  }
+
+  return updateAnyLayer(
+    project,
+    update.layerId,
+    (layer) =>
+      layer.x === update.x && layer.y === update.y
+        ? layer
+        : { ...layer, x: update.x, y: update.y },
+    false,
+  );
+}
+
 export function nudgeLayer(
   project: Project,
   layerId: string,
