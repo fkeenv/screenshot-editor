@@ -265,14 +265,14 @@ function TextControls({
   canColorSelection,
   onApplyColor,
   onBeginColorInteraction,
-  onRefocusEditor,
+  onFinishColorInteraction,
 }: {
   layer: TextLayer;
   onEdit: (changes: TextLayerEdit) => void;
   canColorSelection: boolean;
   onApplyColor: (color: string) => void;
   onBeginColorInteraction: () => void;
-  onRefocusEditor: () => void;
+  onFinishColorInteraction: () => void;
 }) {
   const [customColor, setCustomColor] = useState("#ffffff");
 
@@ -373,7 +373,11 @@ function TextControls({
             key={preset}
             style={{ ["--preset" as string]: presetDetails.color }}
             onPointerDown={(event) => event.preventDefault()}
-            onClick={() => onApplyColor(presetDetails.color)}
+            onClick={() => {
+              onBeginColorInteraction();
+              onApplyColor(presetDetails.color);
+              onFinishColorInteraction();
+            }}
           >
             <span className="color-swatch" />
             {presetDetails.label}
@@ -392,7 +396,7 @@ function TextControls({
               setCustomColor(event.target.value);
               onApplyColor(event.target.value);
             }}
-            onBlur={onRefocusEditor}
+            onBlur={onFinishColorInteraction}
           />
         </label>
       </div>
@@ -428,16 +432,28 @@ export function App() {
   const selectedTextLayer =
     selectedLayer?.kind === "text" ? selectedLayer : undefined;
 
-  function beginControlEdit(
-    update: (value: number) => UndoableEditUpdate,
-  ): ControlEdit {
+  function beginControlEdit<Value>(
+    update: (value: Value) => UndoableEditUpdate | undefined,
+  ): ControlEdit<Value> {
     const edit = beginUndoableEdit(project);
     return {
-      preview: (value) => setProject(edit.preview(update(value))),
+      preview: (value) => {
+        const next = update(value);
+        if (next) setProject(edit.preview(next));
+      },
       finish: () => setProject(edit.finish()),
       cancel: () => setProject(edit.cancel()),
     };
   }
+
+  const textColorEdit = useControlEditLifetime<TextContent>(() => {
+    const layerId = editingTextLayerId;
+    return beginControlEdit((content) =>
+      layerId
+        ? { type: "edit-text-content", layerId, content }
+        : undefined,
+    );
+  });
 
   function applySize(nextWidth: number, nextHeight: number) {
     if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) return;
@@ -619,10 +635,30 @@ export function App() {
   }
 
   function finishTextEditing(layerId: string, content: TextContent) {
-    setProject((current) => editTextLayer(current, layerId, content));
+    commitTextContent(layerId, content);
     setEditingTextLayerId(undefined);
     setSelectTextOnEdit(false);
     setHasTextSelection(false);
+  }
+
+  function commitTextContent(layerId: string, content: TextContent) {
+    setProject((current) =>
+      beginUndoableEdit(current).finish({
+        type: "edit-text-content",
+        layerId,
+        content,
+      }),
+    );
+  }
+
+  function beginTextColorInteraction() {
+    textEditor.current?.preserveOnBlur();
+    textColorEdit.pointerDown();
+  }
+
+  function finishTextColorInteraction() {
+    textColorEdit.blur();
+    textEditor.current?.focus();
   }
 
   function cancelTextEditing() {
@@ -1068,9 +1104,9 @@ export function App() {
                       textEditor.current?.applyColor(color)
                     }
                     onBeginColorInteraction={() =>
-                      textEditor.current?.preserveOnBlur()
+                      beginTextColorInteraction()
                     }
-                    onRefocusEditor={() => textEditor.current?.focus()}
+                    onFinishColorInteraction={finishTextColorInteraction}
                     onEdit={(changes) =>
                       setProject((current) =>
                         editTextLayer(current, selectedTextLayer.id, changes),
@@ -1213,21 +1249,7 @@ export function App() {
                     selectText={selectTextOnEdit}
                     editorHandle={textEditor}
                     onSelectionChange={setHasTextSelection}
-                    onColorCommit={(previous, next) =>
-                      setProject((current) => {
-                        const withPendingText = editTextLayer(
-                          current,
-                          layer.id,
-                          previous,
-                        );
-                        return editTextLayer(withPendingText, layer.id, next);
-                      })
-                    }
-                    onHistory={(shouldRedo) =>
-                      setProject((current) =>
-                        shouldRedo ? redo(current) : undo(current),
-                      )
-                    }
+                    onColorCommit={textColorEdit.preview}
                     onCommit={(content) => finishTextEditing(layer.id, content)}
                     onCancel={cancelTextEditing}
                   />

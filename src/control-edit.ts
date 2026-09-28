@@ -1,26 +1,26 @@
 import { useRef } from "react";
 
-export type ControlEdit = {
-  preview(value: number): void;
+export type ControlEdit<Value = number> = {
+  preview(value: Value): void;
   finish(): void;
   cancel(): void;
 };
 
-export type ControlEditLifetime = {
+export type ControlEditLifetime<Value = number> = {
   pointerDown(): void;
   pointerUp(): void;
   pointerCancel(): void;
   keyDown(key: string): void;
   keyUp(key: string): void;
   blur(): void;
-  preview(value: number): void;
+  preview(value: Value): void;
   changeEnd(): void;
 };
 
-export function createControlEditLifetime(
-  beginEdit: () => ControlEdit,
-): ControlEditLifetime {
-  let activeEdit: ControlEdit | undefined;
+export function createControlEditLifetime<Value = number>(
+  beginEdit: () => ControlEdit<Value>,
+): ControlEditLifetime<Value> {
+  let activeEdit: ControlEdit<Value> | undefined;
   let input: "pointer" | "keyboard" | undefined;
 
   function begin(nextInput?: typeof input) {
@@ -58,12 +58,12 @@ export function createControlEditLifetime(
   };
 }
 
-export function useControlEditLifetime(
-  beginEdit: () => ControlEdit,
-): ControlEditLifetime {
+export function useControlEditLifetime<Value = number>(
+  beginEdit: () => ControlEdit<Value>,
+): ControlEditLifetime<Value> {
   const beginEditRef = useRef(beginEdit);
   beginEditRef.current = beginEdit;
-  const lifetime = useRef<ControlEditLifetime | undefined>(undefined);
+  const lifetime = useRef<ControlEditLifetime<Value> | undefined>(undefined);
   lifetime.current ??= createControlEditLifetime(() => beginEditRef.current());
   return lifetime.current;
 }

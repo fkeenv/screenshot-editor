@@ -1,7 +1,7 @@
 import { Color, TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, useRef, type MutableRefObject, type ReactNode } from "react";
 import {
   contentToDocument,
   documentToContent,
@@ -52,11 +52,11 @@ export function InlineTextEditor({
   selectText: boolean;
   editorHandle: MutableRefObject<TextEditorHandle | null>;
   onSelectionChange: (hasSelection: boolean) => void;
-  onColorCommit: (previous: TextContent, next: TextContent) => void;
-  onHistory: (redo: boolean) => void;
+  onColorCommit: (content: TextContent) => void;
   onCommit: (content: TextContent) => void;
   onCancel: () => void;
 }) {
+  const preserveBlur = useRef(false);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -92,12 +92,13 @@ export function InlineTextEditor({
       onSelectionChange(!current.state.selection.empty);
     },
     onBlur: ({ editor: current }) => {
+      if (preserveBlur.current) return;
       onCommit(documentToContent(current.getJSON()));
     },
   });
 
   function commit() {
-    if (!editor) return;
+    if (!editor || preserveBlur.current) return;
     onCommit(documentToContent(editor.getJSON()));
   }
 
@@ -126,13 +127,16 @@ export function InlineTextEditor({
   editorHandle.current = {
     applyColor: (color) => {
       if (!editor || editor.state.selection.empty) return;
-      const previous = documentToContent(editor.getJSON());
-      editor.chain().focus().setColor(color).run();
-      const next = documentToContent(editor.getJSON());
-      onColorCommit(previous, next);
+      editor.chain().setColor(color).run();
+      onColorCommit(documentToContent(editor.getJSON()));
     },
-    focus: () => editor?.commands.focus(),
-    preserveOnBlur: () => undefined,
+    focus: () => {
+      preserveBlur.current = false;
+      editor?.commands.focus();
+    },
+    preserveOnBlur: () => {
+      preserveBlur.current = true;
+    },
   };
 
   useEffect(() => {

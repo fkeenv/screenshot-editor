@@ -806,6 +806,11 @@ function updateAnyLayer(
 
 export type UndoableEditUpdate =
   | {
+      type: "edit-text-content";
+      layerId: string;
+      content: TextContent;
+    }
+  | {
       type: "move-layer";
       layerId: string;
       x: number;
@@ -863,6 +868,20 @@ function applyUndoableEdit(
   project: Project,
   update: UndoableEditUpdate,
 ): Project {
+  if (update.type === "edit-text-content") {
+    return updateLayer(
+      project,
+      update.layerId,
+      "text",
+      (layer) =>
+        layer.text === update.content.text &&
+        textColorRunsEqual(layer.colorRuns, update.content.colorRuns)
+          ? layer
+          : { ...layer, ...update.content },
+      false,
+    );
+  }
+
   if (update.type === "set-layer-opacity") {
     return updateLayerOpacity(project, update.layerId, update.opacity, false);
   }
@@ -905,6 +924,24 @@ function applyUndoableEdit(
         ? layer
         : { ...layer, x: update.x, y: update.y },
     false,
+  );
+}
+
+function textColorRunsEqual(
+  left: TextColorRun[],
+  right: TextColorRun[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((run, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        run.start === other.start &&
+        run.end === other.end &&
+        run.color === other.color
+      );
+    })
   );
 }
 
