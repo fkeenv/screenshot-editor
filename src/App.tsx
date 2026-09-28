@@ -8,19 +8,19 @@ import {
   type PointerEvent,
 } from "react";
 import {
+  useControlEditLifetime,
+  type ControlEdit,
+} from "./control-edit";
+import {
   addImageLayer,
   addTextLayer,
   beginUndoableEdit,
   cropImageLayer,
   editTextLayer,
-  finishLayerOpacity,
-  finishImageScale,
   fitImageLayerToCanvas,
   nudgeLayer,
   openProject,
   openSavedProject,
-  previewLayerOpacity,
-  previewImageScale,
   renameLayer,
   redo,
   reorderLayer,
@@ -39,6 +39,7 @@ import {
   type TextContent,
   type TextLayer,
   type TextLayerEdit,
+  type UndoableEditUpdate,
 } from "./editor";
 import {
   ColoredText,
@@ -213,28 +214,16 @@ function CropControls({
 
 function ScaleControls({
   layer,
-  onPreview,
-  onCommit,
+  beginEdit,
   onSetScale,
   onFit,
 }: {
   layer: ImageLayer;
-  onPreview: (scale: number) => void;
-  onCommit: (previousScale: number) => void;
+  beginEdit: () => ControlEdit;
   onSetScale: (scale: number) => void;
   onFit: () => void;
 }) {
-  const gestureStart = useRef<number | undefined>(undefined);
-
-  function beginGesture() {
-    gestureStart.current ??= layer.scale;
-  }
-
-  function finishGesture() {
-    const previousScale = gestureStart.current;
-    gestureStart.current = undefined;
-    if (previousScale !== undefined) onCommit(previousScale);
-  }
+  const edit = useControlEditLifetime(beginEdit);
 
   const percent = Math.round(layer.scale * 100);
 
@@ -248,13 +237,13 @@ function ScaleControls({
           max={Math.max(400, percent)}
           step="5"
           value={percent}
-          onPointerDown={beginGesture}
-          onPointerUp={finishGesture}
-          onPointerCancel={finishGesture}
-          onKeyDown={beginGesture}
-          onKeyUp={finishGesture}
-          onBlur={finishGesture}
-          onChange={(event) => onPreview(Number(event.target.value) / 100)}
+          onPointerDown={edit.pointerDown}
+          onPointerUp={edit.pointerUp}
+          onPointerCancel={edit.pointerCancel}
+          onKeyDown={(event) => edit.keyDown(event.key)}
+          onKeyUp={(event) => edit.keyUp(event.key)}
+          onBlur={edit.blur}
+          onChange={(event) => edit.preview(Number(event.target.value) / 100)}
         />
       </label>
       <output>{percent}%</output>
@@ -438,6 +427,17 @@ export function App() {
     selectedLayer?.kind === "image" ? selectedLayer : undefined;
   const selectedTextLayer =
     selectedLayer?.kind === "text" ? selectedLayer : undefined;
+
+  function beginControlEdit(
+    update: (value: number) => UndoableEditUpdate,
+  ): ControlEdit {
+    const edit = beginUndoableEdit(project);
+    return {
+      preview: (value) => setProject(edit.preview(update(value))),
+      finish: () => setProject(edit.finish()),
+      cancel: () => setProject(edit.cancel()),
+    };
+  }
 
   function applySize(nextWidth: number, nextHeight: number) {
     if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) return;
@@ -1010,23 +1010,12 @@ export function App() {
                   <ScaleControls
                     key={selectedImageLayer.id}
                     layer={selectedImageLayer}
-                    onPreview={(scale) =>
-                      setProject((current) =>
-                        previewImageScale(
-                          current,
-                          selectedImageLayer.id,
-                          scale,
-                        ),
-                      )
-                    }
-                    onCommit={(previousScale) =>
-                      setProject((current) =>
-                        finishImageScale(
-                          current,
-                          selectedImageLayer.id,
-                          previousScale,
-                        ),
-                      )
+                    beginEdit={() =>
+                      beginControlEdit((scale) => ({
+                        type: "scale-image",
+                        layerId: selectedImageLayer.id,
+                        scale,
+                      }))
                     }
                     onSetScale={(scale) =>
                       setProject((current) =>
@@ -1269,14 +1258,12 @@ export function App() {
               setProject((current) =>
                 setLayerVisibility(current, layerId, visible),
               ),
-            previewOpacity: (layerId, opacity) =>
-              setProject((current) =>
-                previewLayerOpacity(current, layerId, opacity),
-              ),
-            commitOpacity: (layerId, previousOpacity) =>
-              setProject((current) =>
-                finishLayerOpacity(current, layerId, previousOpacity),
-              ),
+            beginOpacityEdit: (layerId) =>
+              beginControlEdit((opacity) => ({
+                type: "set-layer-opacity",
+                layerId,
+                opacity,
+              })),
           }}
         />
       ) : null}

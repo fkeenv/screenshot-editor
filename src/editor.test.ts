@@ -8,16 +8,12 @@ import {
   contentToDocument,
   documentToContent,
   editTextLayer,
-  finishLayerOpacity,
-  finishImageScale,
   fitImageLayerToCanvas,
   moveLayer,
   nudgeLayer,
   openProject,
   openSavedProject,
   parseColoredText,
-  previewLayerOpacity,
-  previewImageScale,
   redo,
   reorderLayer,
   renameLayer,
@@ -303,16 +299,41 @@ test("setting opacity changes only a layer's visual strength", () => {
   expect(project.layers[0]).toMatchObject({ opacity: 0.4, text: "Text" });
 });
 
-test("opacity previews live and commits one undoable edit", () => {
+test("opacity uses one undoable edit from preview through redo", () => {
   const added = addTextLayer(openProject(), "text-1");
-  const previewed = previewLayerOpacity(added, "text-1", 0.4);
+  const gesture = beginUndoableEdit(added);
+  const previewed = gesture.preview({
+    type: "set-layer-opacity",
+    layerId: "text-1",
+    opacity: 0.4,
+  });
 
   expect(previewed.layers[0]).toMatchObject({ opacity: 0.4 });
   expect(previewed.past).toHaveLength(added.past.length);
 
-  const committed = finishLayerOpacity(previewed, "text-1", 1);
+  const committed = gesture.finish();
   expect(committed.past).toHaveLength(added.past.length + 1);
   expect(undo(committed).layers[0]).toMatchObject({ opacity: 1 });
+  expect(redo(undo(committed)).layers[0]).toMatchObject({ opacity: 0.4 });
+});
+
+test("an opacity interaction ending at its starting value adds no history", () => {
+  const added = addTextLayer(openProject(), "text-1");
+  const gesture = beginUndoableEdit(added);
+
+  gesture.preview({
+    type: "set-layer-opacity",
+    layerId: "text-1",
+    opacity: 0.4,
+  });
+  const unchanged = gesture.finish({
+    type: "set-layer-opacity",
+    layerId: "text-1",
+    opacity: 1,
+  });
+
+  expect(unchanged).toBe(added);
+  expect(unchanged.past).toHaveLength(added.past.length);
 });
 
 test("undo and redo restore layer order, visibility, name, and opacity", () => {
@@ -719,20 +740,46 @@ test("scaling changes the image size without changing the canvas size", () => {
   expect(project.canvasHeight).toBe(600);
 });
 
-test("scale previews live and commits one undoable edit", () => {
+test("scale uses one undoable edit from preview through redo", () => {
   const imported = projectWithImage();
+  const gesture = beginUndoableEdit(imported);
 
-  const firstPreview = previewImageScale(imported, "image-1", 1.25);
-  const finalPreview = previewImageScale(firstPreview, "image-1", 1.5);
+  const firstPreview = gesture.preview({
+    type: "scale-image",
+    layerId: "image-1",
+    scale: 1.25,
+  });
+  const finalPreview = gesture.preview({
+    type: "scale-image",
+    layerId: "image-1",
+    scale: 1.5,
+  });
 
   expect(firstPreview.layers[0]).toMatchObject({ scale: 1.25 });
   expect(finalPreview.layers[0]).toMatchObject({ scale: 1.5 });
   expect(finalPreview.past).toHaveLength(imported.past.length);
 
-  const committed = finishImageScale(finalPreview, "image-1", 1);
+  const committed = gesture.finish();
 
   expect(committed.past).toHaveLength(imported.past.length + 1);
   expect(undo(committed).layers[0]).toMatchObject({ scale: 1 });
+  expect(redo(undo(committed)).layers[0]).toMatchObject({ scale: 1.5 });
+});
+
+test("cancelling a scale interaction restores its starting value", () => {
+  const imported = projectWithImage();
+  const gesture = beginUndoableEdit(imported);
+
+  gesture.preview({
+    type: "scale-image",
+    layerId: "image-1",
+    scale: 1.5,
+  });
+  const cancelled = gesture.cancel();
+
+  expect(cancelled).toBe(imported);
+  expect(cancelled.layers[0]).toMatchObject({ scale: 1 });
+  expect(cancelled.past).toHaveLength(imported.past.length);
 });
 
 test("fit scales the visible image region inside the canvas", () => {
