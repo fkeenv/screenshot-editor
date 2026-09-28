@@ -10,12 +10,12 @@ import {
 import {
   addImageLayer,
   addTextLayer,
+  beginUndoableEdit,
   cropImageLayer,
   editTextLayer,
   finishLayerOpacity,
   finishImageScale,
   fitImageLayerToCanvas,
-  moveLayer,
   nudgeLayer,
   openProject,
   openSavedProject,
@@ -24,7 +24,6 @@ import {
   renameLayer,
   redo,
   reorderLayer,
-  resizeTextLayer,
   scaleImageLayer,
   saveProject,
   setCanvasSize,
@@ -560,6 +559,7 @@ export function App() {
     const originX = layer.x;
     const zoom = project.zoom;
     const fromLeft = corner === "nw" || corner === "sw";
+    const gesture = beginUndoableEdit(project);
     let width = originWidth;
     let x = originX;
     handle.setPointerCapture(event.pointerId);
@@ -572,14 +572,14 @@ export function App() {
 
     function preview(clientX: number) {
       measure(clientX);
-      setProject((current) => ({
-        ...current,
-        layers: current.layers.map((item) =>
-          item.id === layer.id && item.kind === "text"
-            ? { ...item, x, wrapWidth: width }
-            : item,
-        ),
-      }));
+      setProject(
+        gesture.preview({
+          type: "resize-text",
+          layerId: layer.id,
+          x,
+          wrapWidth: width,
+        }),
+      );
     }
 
     function onMove(move: globalThis.PointerEvent) {
@@ -591,18 +591,19 @@ export function App() {
       handle.removeEventListener("pointermove", onMove);
       handle.removeEventListener("pointerup", onUp);
       handle.removeEventListener("pointercancel", onUp);
-      if (up.type !== "pointercancel") measure(up.clientX);
-      setProject((current) => {
-        const restored = {
-          ...current,
-          layers: current.layers.map((item) =>
-            item.id === layer.id && item.kind === "text"
-              ? { ...item, x: originX, wrapWidth: originWidth }
-              : item,
-          ),
-        };
-        return resizeTextLayer(restored, layer.id, x, width);
-      });
+      if (up.type === "pointercancel") {
+        setProject(gesture.cancel());
+        return;
+      }
+      measure(up.clientX);
+      setProject(
+        gesture.finish({
+          type: "resize-text",
+          layerId: layer.id,
+          x,
+          wrapWidth: width,
+        }),
+      );
     }
 
     handle.addEventListener("pointermove", onMove);
@@ -637,31 +638,36 @@ export function App() {
     const startY = event.clientY;
     const originX = project.panX;
     const originY = project.panY;
+    const gesture = beginUndoableEdit(project);
     viewport.setPointerCapture(event.pointerId);
 
     function onMove(move: globalThis.PointerEvent) {
       if (move.buttons === 0) return;
-      setProject((current) => ({
-        ...current,
-        panX: originX + move.clientX - startX,
-        panY: originY + move.clientY - startY,
-      }));
+      setProject(
+        gesture.preview({
+          type: "pan-viewport",
+          panX: originX + move.clientX - startX,
+          panY: originY + move.clientY - startY,
+        }),
+      );
     }
 
     function onUp(up: globalThis.PointerEvent) {
       viewport.removeEventListener("pointermove", onMove);
       viewport.removeEventListener("pointerup", onUp);
       viewport.removeEventListener("pointercancel", onUp);
+      if (up.type === "pointercancel") {
+        setProject(gesture.cancel());
+        return;
+      }
       const panX = originX + up.clientX - startX;
       const panY = originY + up.clientY - startY;
-      if (panX === originX && panY === originY) return;
-      setProject((current) =>
-        setView(
-          { ...current, panX: originX, panY: originY },
-          current.zoom,
+      setProject(
+        gesture.finish({
+          type: "pan-viewport",
           panX,
           panY,
-        ),
+        }),
       );
     }
 
@@ -690,48 +696,36 @@ export function App() {
     const originX = layer.x;
     const originY = layer.y;
     const zoom = project.zoom;
-    let finalX = originX;
-    let finalY = originY;
+    const gesture = beginUndoableEdit(project);
     element.setPointerCapture(event.pointerId);
 
     function onMove(move: globalThis.PointerEvent) {
       if (move.buttons === 0) return;
-      finalX = originX + (move.clientX - startX) / zoom;
-      finalY = originY + (move.clientY - startY) / zoom;
-      setProject((current) => ({
-        ...current,
-        layers: current.layers.map((currentLayer) =>
-          currentLayer.id === layer.id
-            ? { ...currentLayer, x: finalX, y: finalY }
-            : currentLayer,
-        ),
-      }));
+      setProject(
+        gesture.preview({
+          type: "move-layer",
+          layerId: layer.id,
+          x: originX + (move.clientX - startX) / zoom,
+          y: originY + (move.clientY - startY) / zoom,
+        }),
+      );
     }
 
     function onUp(up: globalThis.PointerEvent) {
       element.removeEventListener("pointermove", onMove);
       element.removeEventListener("pointerup", onUp);
       element.removeEventListener("pointercancel", onUp);
-      if (up.type !== "pointercancel") {
-        finalX = originX + (up.clientX - startX) / zoom;
-        finalY = originY + (up.clientY - startY) / zoom;
+      if (up.type === "pointercancel") {
+        setProject(gesture.cancel());
+        return;
       }
-      if (finalX === originX && finalY === originY) return;
-
-      setProject((current) =>
-        moveLayer(
-          {
-            ...current,
-            layers: current.layers.map((currentLayer) =>
-              currentLayer.id === layer.id
-                ? { ...currentLayer, x: originX, y: originY }
-                : currentLayer,
-            ),
-          },
-          layer.id,
-          finalX,
-          finalY,
-        ),
+      setProject(
+        gesture.finish({
+          type: "move-layer",
+          layerId: layer.id,
+          x: originX + (up.clientX - startX) / zoom,
+          y: originY + (up.clientY - startY) / zoom,
+        }),
       );
     }
 

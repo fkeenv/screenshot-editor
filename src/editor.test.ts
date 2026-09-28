@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   addImageLayer,
   addTextLayer,
+  beginUndoableEdit,
   cropImageLayer,
   colorTextRange,
   contentToDocument,
@@ -126,6 +127,24 @@ test("zoom and pan change the view and leave the canvas size unchanged", () => {
   expect(project.panY).toBe(-15);
   expect(project.canvasWidth).toBe(1150);
   expect(project.canvasHeight).toBe(600);
+});
+
+test("viewport panning previews live and finishes as one undoable edit", () => {
+  const project = setView(openProject(), 2, 0, 0);
+  const gesture = beginUndoableEdit(project);
+
+  const previewed = gesture.preview({
+    type: "pan-viewport",
+    panX: 40,
+    panY: -15,
+  });
+
+  expect(previewed).toMatchObject({ zoom: 2, panX: 40, panY: -15 });
+  expect(previewed.past).toHaveLength(project.past.length);
+
+  const finished = gesture.finish();
+  expect(finished.past).toHaveLength(project.past.length + 1);
+  expect(undo(finished)).toMatchObject({ zoom: 2, panX: 0, panY: 0 });
 });
 
 test("undo and redo restore the previous canvas size and view", () => {
@@ -533,6 +552,63 @@ test("dragging moves the image without moving or resizing the canvas", () => {
   expect(project.panY).toBe(0);
 });
 
+test("a layer drag previews live and finishes as one undoable edit", () => {
+  const imported = projectWithImage();
+  const gesture = beginUndoableEdit(imported);
+
+  const previewed = gesture.preview({
+    type: "move-layer",
+    layerId: "image-1",
+    x: 48,
+    y: 72,
+  });
+
+  expect(previewed.layers[0]).toMatchObject({ x: 48, y: 72 });
+  expect(previewed.past).toHaveLength(imported.past.length);
+
+  const finished = gesture.finish();
+  expect(finished.past).toHaveLength(imported.past.length + 1);
+  expect(undo(finished).layers[0]).toMatchObject({ x: 0, y: 0 });
+});
+
+test("cancelling a pointer edit restores its start without an undo entry", () => {
+  const imported = projectWithImage();
+  const gesture = beginUndoableEdit(imported);
+
+  gesture.preview({
+    type: "move-layer",
+    layerId: "image-1",
+    x: 48,
+    y: 72,
+  });
+  const cancelled = gesture.cancel();
+
+  expect(cancelled).toBe(imported);
+  expect(cancelled.layers[0]).toMatchObject({ x: 0, y: 0 });
+  expect(cancelled.past).toHaveLength(imported.past.length);
+});
+
+test("finishing a pointer edit without a change adds no undo entry", () => {
+  const imported = projectWithImage();
+  const gesture = beginUndoableEdit(imported);
+
+  gesture.preview({
+    type: "move-layer",
+    layerId: "image-1",
+    x: 48,
+    y: 72,
+  });
+  const unchanged = gesture.finish({
+    type: "move-layer",
+    layerId: "image-1",
+    x: 0,
+    y: 0,
+  });
+
+  expect(unchanged).toBe(imported);
+  expect(unchanged.past).toHaveLength(imported.past.length);
+});
+
 test("resizing a text box from the left changes its width and keeps the right edge", () => {
   const added = addTextLayer(openProject(), "text-1", { x: 32, y: 32 });
   const project = resizeTextLayer(added, "text-1", 12, 420);
@@ -543,6 +619,25 @@ test("resizing a text box from the left changes its width and keeps the right ed
   expect(layer.x).toBe(12);
   expect(layer.wrapWidth).toBe(420);
   expect(layer.x + layer.wrapWidth).toBe(432);
+});
+
+test("a text resize previews live and finishes as one undoable edit", () => {
+  const added = addTextLayer(openProject(), "text-1", { x: 32, y: 32 });
+  const gesture = beginUndoableEdit(added);
+
+  const previewed = gesture.preview({
+    type: "resize-text",
+    layerId: "text-1",
+    x: 12,
+    wrapWidth: 420,
+  });
+
+  expect(previewed.layers[0]).toMatchObject({ x: 12, wrapWidth: 420 });
+  expect(previewed.past).toHaveLength(added.past.length);
+
+  const finished = gesture.finish();
+  expect(finished.past).toHaveLength(added.past.length + 1);
+  expect(undo(finished).layers[0]).toMatchObject({ x: 32, wrapWidth: 400 });
 });
 
 test("dragging and nudging move the text layer", () => {
