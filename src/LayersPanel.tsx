@@ -10,7 +10,11 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useRef, useState } from "react";
+import { useState } from "react";
+import {
+  useControlEditLifetime,
+  type ControlEdit,
+} from "./control-edit";
 import type { Layer } from "./editor";
 
 export type LayerActions = {
@@ -18,8 +22,7 @@ export type LayerActions = {
   reorder: (layerId: string, targetIndex: number) => void;
   rename: (layerId: string, name: string) => void;
   setVisibility: (layerId: string, visible: boolean) => void;
-  previewOpacity: (layerId: string, opacity: number) => void;
-  commitOpacity: (layerId: string, previousOpacity: number) => void;
+  beginOpacityEdit: (layerId: string) => ControlEdit;
 };
 
 type LayersPanelProps = {
@@ -45,19 +48,9 @@ function LayerRow({
   onDragStart,
   onDragEnd,
 }: LayerRowProps) {
-  const opacityStart = useRef<number | undefined>(undefined);
-
-  function beginOpacityChange() {
-    opacityStart.current ??= layer.opacity;
-  }
-
-  function finishOpacityChange() {
-    const previousOpacity = opacityStart.current;
-    opacityStart.current = undefined;
-    if (previousOpacity !== undefined) {
-      actions.commitOpacity(layer.id, previousOpacity);
-    }
-  }
+  const opacityEdit = useControlEditLifetime(() =>
+    actions.beginOpacityEdit(layer.id),
+  );
 
   return (
     <Paper
@@ -161,9 +154,11 @@ function LayerRow({
           </Text>
           <Box
             style={{ flex: 1 }}
-            onPointerDownCapture={beginOpacityChange}
-            onKeyDownCapture={beginOpacityChange}
-            onBlurCapture={finishOpacityChange}
+            onPointerDownCapture={opacityEdit.pointerDown}
+            onPointerCancelCapture={opacityEdit.pointerCancel}
+            onKeyDownCapture={(event) => opacityEdit.keyDown(event.key)}
+            onKeyUpCapture={(event) => opacityEdit.keyUp(event.key)}
+            onBlurCapture={opacityEdit.blur}
           >
             <Slider
               min={0}
@@ -174,8 +169,8 @@ function LayerRow({
               aria-label={`Opacity for ${layer.name}`}
               size="xs"
               onClick={(event) => event.stopPropagation()}
-              onChange={(opacity) => actions.previewOpacity(layer.id, opacity)}
-              onChangeEnd={finishOpacityChange}
+              onChange={opacityEdit.preview}
+              onChangeEnd={opacityEdit.changeEnd}
             />
           </Box>
           <Text size="xs" ta="right" w={34}>

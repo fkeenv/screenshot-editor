@@ -771,14 +771,6 @@ export function setLayerOpacity(
   return updateLayerOpacity(project, layerId, opacity, true);
 }
 
-export function previewLayerOpacity(
-  project: Project,
-  layerId: string,
-  opacity: number,
-): Project {
-  return updateLayerOpacity(project, layerId, opacity, false);
-}
-
 function updateLayerOpacity(
   project: Project,
   layerId: string,
@@ -795,22 +787,6 @@ function updateLayerOpacity(
         : { ...layer, opacity: normalizedOpacity },
     recordHistory,
   );
-}
-
-export function finishLayerOpacity(
-  project: Project,
-  layerId: string,
-  previousOpacity: number,
-): Project {
-  const finalOpacity = project.layers.find(
-    (layer) => layer.id === layerId,
-  )?.opacity;
-  if (finalOpacity === undefined || finalOpacity === previousOpacity) {
-    return project;
-  }
-
-  const beforeGesture = previewLayerOpacity(project, layerId, previousOpacity);
-  return setLayerOpacity(beforeGesture, layerId, finalOpacity);
 }
 
 function updateAnyLayer(
@@ -845,6 +821,16 @@ export type UndoableEditUpdate =
       type: "pan-viewport";
       panX: number;
       panY: number;
+    }
+  | {
+      type: "scale-image";
+      layerId: string;
+      scale: number;
+    }
+  | {
+      type: "set-layer-opacity";
+      layerId: string;
+      opacity: number;
     };
 
 export type UndoableEdit = {
@@ -877,6 +863,21 @@ function applyUndoableEdit(
   project: Project,
   update: UndoableEditUpdate,
 ): Project {
+  if (update.type === "set-layer-opacity") {
+    return updateLayerOpacity(project, update.layerId, update.opacity, false);
+  }
+
+  if (update.type === "scale-image") {
+    return updateLayer(
+      project,
+      update.layerId,
+      "image",
+      (layer) =>
+        layer.scale === update.scale ? layer : { ...layer, scale: update.scale },
+      false,
+    );
+  }
+
   if (update.type === "pan-viewport") {
     return project.panX === update.panX && project.panY === update.panY
       ? project
@@ -927,35 +928,6 @@ export function scaleImageLayer(
   return updateLayer(project, layerId, "image", (layer) =>
     layer.scale === scale ? layer : { ...layer, scale },
   );
-}
-
-export function previewImageScale(
-  project: Project,
-  layerId: string,
-  scale: number,
-): Project {
-  return updateLayer(
-    project,
-    layerId,
-    "image",
-    (layer) => (layer.scale === scale ? layer : { ...layer, scale }),
-    false,
-  );
-}
-
-export function finishImageScale(
-  project: Project,
-  layerId: string,
-  previousScale: number,
-): Project {
-  const finalScale = project.layers.find(
-    (layer): layer is ImageLayer =>
-      layer.id === layerId && layer.kind === "image",
-  )?.scale;
-  if (finalScale === undefined || finalScale === previousScale) return project;
-
-  const beforeGesture = previewImageScale(project, layerId, previousScale);
-  return scaleImageLayer(beforeGesture, layerId, finalScale);
 }
 
 export function fitImageLayerToCanvas(
