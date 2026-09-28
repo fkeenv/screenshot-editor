@@ -1,7 +1,5 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { beforeAll, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import {
   addImageLayer,
   addTextLayer,
@@ -13,42 +11,9 @@ import {
   setLayerVisibility,
   setView,
 } from "./editor";
-import {
-  exportFlattened,
-  prepareExportCodecs,
-  prepareExportEnvironment,
-} from "./export";
+import { createNodeExportRuntime } from "./test/createNodeExportRuntime";
 
-const require = createRequire(import.meta.url);
-
-beforeAll(async () => {
-  prepareExportEnvironment({
-    createRaster(width, height) {
-      return createCanvas(width, height) as never;
-    },
-    loadImage(source) {
-      return loadImage(source) as never;
-    },
-  });
-  const { init: initPng } = await import("@jsquash/png/encode");
-  const { init: initJpeg } = await import("@jsquash/jpeg/encode");
-  const { init: initWebp } = await import("@jsquash/webp/encode");
-  prepareExportCodecs(async () => {
-    await initPng(
-      await readFile(require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm")),
-    );
-    await initJpeg({
-      wasmBinary: await readFile(
-        require.resolve("@jsquash/jpeg/codec/enc/mozjpeg_enc.wasm"),
-      ),
-    });
-    await initWebp({
-      wasmBinary: await readFile(
-        require.resolve("@jsquash/webp/codec/enc/webp_enc_simd.wasm"),
-      ),
-    });
-  });
-});
+const exportRuntime = createNodeExportRuntime();
 
 async function readPixels(bytes: Uint8Array) {
   const image = await loadImage(Buffer.from(bytes));
@@ -66,7 +31,7 @@ test("export produces a png of the canvas", async () => {
   let project = setCanvasSize(openProject(), 4, 2);
   project = setView(project, 3, 12, -8);
 
-  const exported = await exportFlattened(project, {
+  const exported = await exportRuntime.exportFlattened(project, {
     format: "png",
     quality: 80,
   });
@@ -81,8 +46,8 @@ test("export produces a png of the canvas", async () => {
 test("export produces a jpeg and a webp of the canvas", async () => {
   const project = setCanvasSize(openProject(), 3, 2);
 
-  const jpeg = await exportFlattened(project, { format: "jpeg", quality: 80 });
-  const webp = await exportFlattened(project, { format: "webp", quality: 80 });
+  const jpeg = await exportRuntime.exportFlattened(project, { format: "jpeg", quality: 80 });
+  const webp = await exportRuntime.exportFlattened(project, { format: "webp", quality: 80 });
 
   expect(jpeg.mediaType).toBe("image/jpeg");
   expect(webp.mediaType).toBe("image/webp");
@@ -121,7 +86,7 @@ test("export paints an image layer onto the canvas", async () => {
   });
   project = moveLayer(project, "image-1", 1, 0);
 
-  const exported = await exportFlattened(project, { format: "png", quality: 80 });
+  const exported = await exportRuntime.exportFlattened(project, { format: "png", quality: 80 });
   const image = await readPixels(exported.bytes);
 
   expect(Array.from(image.data.slice(4, 8))).toEqual([255, 0, 0, 255]);
@@ -157,14 +122,14 @@ test("lowering quality makes the jpeg and webp smaller", async () => {
     height: 48,
   });
 
-  const jpegHigh = await exportFlattened(project, { format: "jpeg", quality: 80 });
-  const jpegLow = await exportFlattened(project, { format: "jpeg", quality: 20 });
-  const webpHigh = await exportFlattened(project, {
+  const jpegHigh = await exportRuntime.exportFlattened(project, { format: "jpeg", quality: 80 });
+  const jpegLow = await exportRuntime.exportFlattened(project, { format: "jpeg", quality: 20 });
+  const webpHigh = await exportRuntime.exportFlattened(project, {
     format: "webp",
     quality: 80,
     lossless: false,
   });
-  const webpLow = await exportFlattened(project, {
+  const webpLow = await exportRuntime.exportFlattened(project, {
     format: "webp",
     quality: 20,
     lossless: false,
@@ -185,13 +150,13 @@ test("lossless png and webp keep the full image", async () => {
     height: 32,
   });
 
-  const png = await exportFlattened(project, { format: "png", quality: 20 });
-  const lossless = await exportFlattened(project, {
+  const png = await exportRuntime.exportFlattened(project, { format: "png", quality: 20 });
+  const lossless = await exportRuntime.exportFlattened(project, {
     format: "webp",
     quality: 20,
     lossless: true,
   });
-  const lossy = await exportFlattened(project, {
+  const lossy = await exportRuntime.exportFlattened(project, {
     format: "webp",
     quality: 20,
     lossless: false,
@@ -207,10 +172,10 @@ test("lossless png and webp keep the full image", async () => {
 test("a transparent png keeps empty canvas transparent and a jpeg stays opaque", async () => {
   const project = setCanvasSize(openProject(), 2, 2);
   const png = await readPixels(
-    (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
+    (await exportRuntime.exportFlattened(project, { format: "png", quality: 80 })).bytes,
   );
   const jpeg = await readPixels(
-    (await exportFlattened(project, { format: "jpeg", quality: 80 })).bytes,
+    (await exportRuntime.exportFlattened(project, { format: "jpeg", quality: 80 })).bytes,
   );
 
   expect(Array.from(png.data)).toEqual(Array(16).fill(0));
@@ -238,13 +203,13 @@ test("hidden layers are left out and opacity is kept", async () => {
   project = setLayerOpacity(project, "image-1", 0.5);
 
   const faded = await readPixels(
-    (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
+    (await exportRuntime.exportFlattened(project, { format: "png", quality: 80 })).bytes,
   );
   expect(Array.from(faded.data)).toEqual([255, 0, 0, 128]);
 
   project = setLayerVisibility(project, "image-1", false);
   const hidden = await readPixels(
-    (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
+    (await exportRuntime.exportFlattened(project, { format: "png", quality: 80 })).bytes,
   );
   expect(Array.from(hidden.data)).toEqual([0, 0, 0, 0]);
 });
@@ -269,7 +234,7 @@ test("an upper image covers a lower image", async () => {
   });
 
   const image = await readPixels(
-    (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
+    (await exportRuntime.exportFlattened(project, { format: "png", quality: 80 })).bytes,
   );
   expect(Array.from(image.data)).toEqual([255, 0, 0, 255]);
 });
@@ -288,7 +253,7 @@ test("export paints colored text", async () => {
   });
 
   const image = await readPixels(
-    (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
+    (await exportRuntime.exportFlattened(project, { format: "png", quality: 80 })).bytes,
   );
   const painted = [];
   for (let index = 0; index < image.data.length; index += 4) {
