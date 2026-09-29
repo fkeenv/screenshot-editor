@@ -33,29 +33,21 @@ type LayersPanelProps = {
 
 type LayerRowProps = Omit<LayersPanelProps, "layers"> & {
   layer: Layer;
-  index: number;
-  layerCount: number;
   onDragStart: (layerId: string) => void;
   onDragEnd: () => void;
 };
 
 function LayerRow({
   layer,
-  index,
-  layerCount,
   selectedLayerId,
   actions,
   onDragStart,
   onDragEnd,
 }: LayerRowProps) {
-  const opacityEdit = useControlEditLifetime(() =>
-    actions.beginOpacityEdit(layer.id),
-  );
-
   return (
     <Paper
       withBorder
-      p="xs"
+      p={5}
       radius="sm"
       style={{
         background: selectedLayerId === layer.id
@@ -66,121 +58,138 @@ function LayerRow({
             ? "var(--accent)"
             : undefined,
       }}
-      onClick={() => actions.select(layer.id)}
     >
-      <Stack gap={8}>
-        <Group gap={6} wrap="nowrap">
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            draggable
-            aria-label={`Drag ${layer.name} to reorder`}
-            title="Drag to reorder"
-            onClick={(event) => event.stopPropagation()}
-            onDragStart={(event) => {
-              event.stopPropagation();
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", layer.id);
-              onDragStart(layer.id);
-            }}
-            onDragEnd={onDragEnd}
-          >
-            ⠿
-          </ActionIcon>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`}
-            aria-pressed={layer.visible}
-            title={layer.visible ? "Hide layer" : "Show layer"}
-            onClick={(event) => {
-              event.stopPropagation();
-              actions.setVisibility(layer.id, !layer.visible);
-            }}
-          >
-            {layer.visible ? "◉" : "○"}
-          </ActionIcon>
-          <TextInput
-            key={`${layer.id}-${layer.name}`}
-            defaultValue={layer.name}
-            aria-label={`Name for ${layer.name}`}
-            size="xs"
-            style={{ flex: 1 }}
-            onFocus={() => actions.select(layer.id)}
-            onBlur={(event) => {
-              const name = event.currentTarget.value.trim();
-              if (name && name !== layer.name) {
-                actions.rename(layer.id, name);
-              } else if (!name) {
-                event.currentTarget.value = layer.name;
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-          />
-          <Badge variant="light" color="gray" size="xs">
-            {layer.kind}
-          </Badge>
-        </Group>
+      <Group gap={4} wrap="nowrap">
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          draggable
+          aria-label={`Drag ${layer.name} to reorder`}
+          title="Drag to reorder"
+          onClick={(event) => event.stopPropagation()}
+          onDragStart={(event) => {
+            event.stopPropagation();
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", layer.id);
+            onDragStart(layer.id);
+          }}
+          onDragEnd={onDragEnd}
+        >
+          ⠿
+        </ActionIcon>
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`}
+          aria-pressed={layer.visible}
+          title={layer.visible ? "Hide layer" : "Show layer"}
+          onClick={(event) => {
+            event.stopPropagation();
+            actions.setVisibility(layer.id, !layer.visible);
+          }}
+        >
+          {layer.visible ? "◉" : "○"}
+        </ActionIcon>
+        <button
+          type="button"
+          className="layer-select"
+          aria-pressed={selectedLayerId === layer.id}
+          onClick={() => actions.select(layer.id)}
+        >
+          <span>{layer.name}</span>
+          <span className="layer-kind">{layer.kind}</span>
+        </button>
+      </Group>
+    </Paper>
+  );
+}
 
-        <Group gap={6} wrap="nowrap">
+export function SelectedLayerControls({
+  layer,
+  index,
+  layerCount,
+  actions,
+}: {
+  layer: Layer;
+  index: number;
+  layerCount: number;
+  actions: Pick<LayerActions, "rename" | "beginOpacityEdit" | "reorder">;
+}) {
+  const opacityEdit = useControlEditLifetime(() =>
+    actions.beginOpacityEdit(layer.id),
+  );
+
+  return (
+    <div className="selected-layer-controls">
+      <label>
+        Name
+        <TextInput
+          key={`${layer.id}-${layer.name}`}
+          defaultValue={layer.name}
+          aria-label={`Name for ${layer.name}`}
+          size="xs"
+          onBlur={(event) => {
+            const name = event.currentTarget.value.trim();
+            if (name && name !== layer.name) {
+              actions.rename(layer.id, name);
+            } else if (!name) {
+              event.currentTarget.value = layer.name;
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+        />
+      </label>
+      <div className="layer-order-controls">
+        <span>Layer order</span>
+        <div>
           <ActionIcon
             variant="default"
-            size="sm"
             aria-label={`Move ${layer.name} up`}
             title="Move layer up"
             disabled={index === layerCount - 1}
-            onClick={(event) => {
-              event.stopPropagation();
-              actions.reorder(layer.id, index + 1);
-            }}
+            onClick={() => actions.reorder(layer.id, index + 1)}
           >
             ↑
           </ActionIcon>
           <ActionIcon
             variant="default"
-            size="sm"
             aria-label={`Move ${layer.name} down`}
             title="Move layer down"
             disabled={index === 0}
-            onClick={(event) => {
-              event.stopPropagation();
-              actions.reorder(layer.id, index - 1);
-            }}
+            onClick={() => actions.reorder(layer.id, index - 1)}
           >
             ↓
           </ActionIcon>
-          <Text c="dimmed" size="xs">
-            Opacity
-          </Text>
-          <Box
-            style={{ flex: 1 }}
-            onPointerDownCapture={opacityEdit.pointerDown}
-            onPointerCancelCapture={opacityEdit.pointerCancel}
-            onKeyDownCapture={(event) => opacityEdit.keyDown(event.key)}
-            onKeyUpCapture={(event) => opacityEdit.keyUp(event.key)}
-            onBlurCapture={opacityEdit.blur}
-          >
-            <Slider
-              min={0}
-              max={1}
-              step={0.01}
-              value={layer.opacity}
-              label={(value) => `${Math.round(value * 100)}%`}
-              aria-label={`Opacity for ${layer.name}`}
-              size="xs"
-              onClick={(event) => event.stopPropagation()}
-              onChange={opacityEdit.preview}
-              onChangeEnd={opacityEdit.changeEnd}
-            />
-          </Box>
-          <Text size="xs" ta="right" w={34}>
-            {Math.round(layer.opacity * 100)}%
-          </Text>
-        </Group>
-      </Stack>
-    </Paper>
+        </div>
+      </div>
+      <label>
+        <span className="opacity-heading">
+          <span>Opacity</span>
+          <output>{Math.round(layer.opacity * 100)}%</output>
+        </span>
+        <Box
+          onPointerDownCapture={opacityEdit.pointerDown}
+          onPointerCancelCapture={opacityEdit.pointerCancel}
+          onKeyDownCapture={(event) => opacityEdit.keyDown(event.key)}
+          onKeyUpCapture={(event) => opacityEdit.keyUp(event.key)}
+          onBlurCapture={opacityEdit.blur}
+        >
+          <Slider
+            min={0}
+            max={1}
+            step={0.01}
+            value={layer.opacity}
+            label={(value) => `${Math.round(value * 100)}%`}
+            aria-label={`Opacity for ${layer.name}`}
+            size="xs"
+            onChange={opacityEdit.preview}
+            onChangeEnd={opacityEdit.changeEnd}
+          />
+        </Box>
+      </label>
+    </div>
   );
 }
 
@@ -283,15 +292,12 @@ export function LayersPanel({
         <ScrollArea type="auto" style={{ flex: 1 }}>
           <Stack gap={0} py="xs" role="list" aria-label="Layer stack">
             {displayLayers.map((layer, displayIndex) => {
-              const index = layers.length - displayIndex - 1;
               return (
                 <Box key={layer.id}>
                   {dropTarget(displayIndex)}
                   <Box role="listitem" px="xs">
                     <LayerRow
                       layer={layer}
-                      index={index}
-                      layerCount={layers.length}
                       selectedLayerId={selectedLayerId}
                       actions={actions}
                       onDragStart={setDraggedLayerId}

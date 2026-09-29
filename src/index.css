@@ -227,7 +227,7 @@ button:disabled {
   top: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-bottom: 1px solid var(--border);
   background: var(--chrome-bg);
 }
@@ -261,6 +261,65 @@ button:disabled {
   color: var(--text-strong);
   font-size: 13px;
   font-weight: 700;
+}
+
+.selected-layer-controls {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.selected-layer-controls .opacity-heading {
+  display: flex;
+  justify-content: space-between;
+}
+
+.selected-layer-controls .mantine-InputWrapper-root {
+  width: 100%;
+}
+
+.tool-panel .selected-layer-controls input:not([type="range"]):not([type="file"]) {
+  width: 100%;
+}
+
+.layer-order-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.layer-order-controls > div {
+  display: flex;
+  gap: 6px;
+}
+
+.layer-select {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 5px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+
+.layer-select span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-kind {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
 }
 
 .control-group {
