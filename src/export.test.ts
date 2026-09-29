@@ -15,6 +15,7 @@ import {
 } from "./editor";
 import {
   exportFlattened,
+  exportStitch,
   prepareExportCodecs,
   prepareExportEnvironment,
 } from "./export";
@@ -76,6 +77,77 @@ test("export produces a png of the canvas", async () => {
   expect(image.width).toBe(4);
   expect(image.height).toBe(2);
   expect(Array.from(image.data)).toEqual(Array(32).fill(0));
+});
+
+test("stitch exports saved screens in order as one tall image", async () => {
+  let red = setCanvasSize(openProject(), 2, 1);
+  red = addImageLayer(red, {
+    id: "red",
+    name: "Red",
+    source: solidPng(255, 0, 0),
+    format: "image/png",
+    width: 1,
+    height: 1,
+  });
+  let blue = setCanvasSize(openProject(), 1, 2);
+  blue = addImageLayer(blue, {
+    id: "blue",
+    name: "Blue",
+    source: solidPng(0, 0, 255),
+    format: "image/png",
+    width: 1,
+    height: 1,
+  });
+
+  const exported = await exportStitch([red, blue], {
+    format: "png",
+    quality: 80,
+  });
+  const image = await readPixels(exported.bytes);
+
+  expect({ width: image.width, height: image.height }).toEqual({
+    width: 2,
+    height: 3,
+  });
+  expect(Array.from(image.data.slice(0, 4))).toEqual([255, 0, 0, 255]);
+  expect(Array.from(image.data.slice(8, 12))).toEqual([0, 0, 255, 255]);
+});
+
+test("stitch needs at least two saved screens", async () => {
+  await expect(
+    exportStitch([openProject()], { format: "png", quality: 80 }),
+  ).rejects.toThrow("Choose at least two saved screens");
+});
+
+test("stitch clips each screen to the bounds of its saved canvas", async () => {
+  let red = setCanvasSize(openProject(), 1, 1);
+  red = addImageLayer(red, {
+    id: "red",
+    name: "Red",
+    source: solidPng(255, 0, 0),
+    format: "image/png",
+    width: 1,
+    height: 1,
+  });
+  let overflow = setCanvasSize(openProject(), 1, 1);
+  overflow = addImageLayer(overflow, {
+    id: "overflow",
+    name: "Overflow",
+    source: solidPng(0, 0, 255),
+    format: "image/png",
+    width: 1,
+    height: 1,
+  });
+  overflow = moveLayer(overflow, "overflow", 0, -1);
+
+  const exported = await exportStitch([red, overflow], {
+    format: "png",
+    quality: 80,
+  });
+  const image = await readPixels(exported.bytes);
+
+  expect(Array.from(image.data.slice(0, 4))).toEqual([255, 0, 0, 255]);
+  expect(Array.from(image.data.slice(4, 8))).toEqual([0, 0, 0, 0]);
 });
 
 test("export produces a jpeg and a webp of the canvas", async () => {
