@@ -57,7 +57,11 @@ import {
   fileWorkflowForWindow,
   type PickedFile,
 } from "./file-workflow";
-import { LayersPanel } from "./LayersPanel";
+import {
+  LayersPanel,
+  SelectedLayerControls,
+  type LayerActions,
+} from "./LayersPanel";
 import { presentProject } from "./presentation";
 import { PresentedText } from "./PresentedText";
 
@@ -68,7 +72,7 @@ const PRESETS = [
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 const TEXT_EDIT_FRAME_WIDTH = 6;
-const TOOL_MENUS = ["Export", "Stitch", "Image", "Text"] as const;
+const TOOL_MENUS = ["Properties", "Export", "Stitch"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
 
 type StitchScreen = {
@@ -412,7 +416,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [exportError, setExportError] = useState<string>();
   const [stitchScreens, setStitchScreens] = useState<StitchScreen[]>([]);
   const [stitchError, setStitchError] = useState<string>();
-  const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
+  const [activeMenu, setActiveMenu] = useState<ToolMenu>("Properties");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
   const [hasTextSelection, setHasTextSelection] = useState(false);
@@ -422,12 +426,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }>();
   const [placingText, setPlacingText] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
-  const [toolsPanelOpen, setToolsPanelOpen] = useState(
-    () => window.innerWidth > 1000,
-  );
+  const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
   const textEditor = useRef<TextEditorHandle | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const toolPanelRef = useRef<HTMLElement>(null);
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
   );
@@ -534,6 +537,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         }),
       );
       setSelectedLayerId(id);
+      setActiveMenu("Properties");
       setImportError(undefined);
     } catch (error) {
       setImportError(
@@ -558,6 +562,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         ),
       );
       setSelectedLayerId(undefined);
+      setActiveMenu("Properties");
       resetTextEditing();
       setPlacingText(false);
       setProjectFileError(undefined);
@@ -662,7 +667,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setSelectedLayerId(id);
     startTextEditing(id);
     setPlacingText(false);
-    setActiveMenu("Text");
+    setActiveMenu("Properties");
   }
 
   function resizeTextBox(
@@ -733,7 +738,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   function beginTextEditing(layerId: string) {
     setSelectedLayerId(layerId);
     startTextEditing(layerId);
-    setActiveMenu("Text");
+    setActiveMenu("Properties");
   }
 
   function finishTextEditing(layerId: string, content: TextContent) {
@@ -828,7 +833,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       event.preventDefault();
     }
     setSelectedLayerId(layer.id);
-    setActiveMenu(layer.kind === "image" ? "Image" : "Text");
+    setActiveMenu("Properties");
     const element = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -877,6 +882,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setWidth(String(project.canvasWidth));
     setHeight(String(project.canvasHeight));
   }, [project.canvasWidth, project.canvasHeight]);
+
+  useEffect(() => {
+    if (activeMenu === "Properties") toolPanelRef.current?.scrollTo(0, 0);
+  }, [activeMenu, selectedLayerId]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -932,6 +941,25 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedLayerId]);
+
+  const layerActions: LayerActions = {
+    select: (layerId) => {
+      setSelectedLayerId(layerId);
+      setActiveMenu("Properties");
+    },
+    reorder: (layerId, targetIndex) =>
+      setProject((current) => reorderLayer(current, layerId, targetIndex)),
+    rename: (layerId, name) =>
+      setProject((current) => renameLayer(current, layerId, name)),
+    setVisibility: (layerId, visible) =>
+      setProject((current) => setLayerVisibility(current, layerId, visible)),
+    beginOpacityEdit: (layerId) =>
+      beginControlEdit((opacity) => ({
+        type: "set-layer-opacity",
+        layerId,
+        opacity,
+      })),
+  };
 
   return (
     <div className="app">
@@ -1037,7 +1065,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               aria-expanded={toolsPanelOpen}
               onClick={() => setToolsPanelOpen((open) => !open)}
             >
-              {toolsPanelOpen ? "Hide tools" : "Tools"}
+              {toolsPanelOpen ? "Hide inspector" : "Inspector"}
             </button>
             <button
               type="button"
@@ -1057,8 +1085,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       </header>
 
       {toolsPanelOpen ? (
-        <aside className="tool-panel" id="tools-panel" aria-label="Workspace tools">
-          <nav className="menu-tabs" role="tablist" aria-label="Workspace tools">
+        <aside className="tool-panel" id="tools-panel" ref={toolPanelRef} aria-label="Inspector">
+          <nav className="menu-tabs" role="tablist" aria-label="Inspector views">
             {TOOL_MENUS.map((menu) => (
               <button
                 type="button"
@@ -1188,7 +1216,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             </div>
           ) : null}
 
-          {activeMenu === "Image" ? (
+          {activeMenu === "Properties" ? (
             <>
               <form className="control-group" onSubmit={applyTypedSize}>
                 <span className="control-title">Canvas size</span>
@@ -1242,6 +1270,28 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 ) : null}
               </form>
 
+              {selectedLayer ? (
+                <>
+                  <div className="tool-divider" />
+                  <span className="panel-heading">
+                    {selectedLayer.kind === "image" ? "Image" : "Text"} properties
+                  </span>
+                  <SelectedLayerControls
+                    key={selectedLayer.id}
+                    layer={selectedLayer}
+                    index={project.layers.findIndex((layer) => layer.id === selectedLayer.id)}
+                    layerCount={project.layers.length}
+                    actions={layerActions}
+                  />
+                </>
+              ) : (
+                <p className="tool-hint">
+                  {placingText
+                    ? "Click the canvas to place the text box."
+                    : "Select an image or text layer to edit its properties."}
+                </p>
+              )}
+
               {selectedImageLayer ? (
                 <>
                   <div className="tool-divider" />
@@ -1276,15 +1326,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     }
                   />
                 </>
-              ) : (
-                <span className="tool-hint">Import or select an image to scale and crop it.</span>
-              )}
-            </>
-          ) : null}
+              ) : null}
 
-          {activeMenu === "Text" ? (
-            <>
               {selectedTextLayer ? (
+                <>
+                  <div className="tool-divider" />
                 <div className="composer">
                   <TextControls
                     layer={selectedTextLayer}
@@ -1306,13 +1352,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     }
                   />
                 </div>
-              ) : (
-                <span className="tool-hint">
-                  {placingText
-                    ? "Click the canvas to place the text box."
-                    : "Select a text box to edit its style."}
-                </span>
-              )}
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -1459,25 +1500,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         <LayersPanel
           layers={project.layers}
           selectedLayerId={selectedLayerId}
-          actions={{
-            select: setSelectedLayerId,
-            reorder: (layerId, targetIndex) =>
-              setProject((current) =>
-                reorderLayer(current, layerId, targetIndex),
-              ),
-            rename: (layerId, name) =>
-              setProject((current) => renameLayer(current, layerId, name)),
-            setVisibility: (layerId, visible) =>
-              setProject((current) =>
-                setLayerVisibility(current, layerId, visible),
-              ),
-            beginOpacityEdit: (layerId) =>
-              beginControlEdit((opacity) => ({
-                type: "set-layer-opacity",
-                layerId,
-                opacity,
-              })),
-          }}
+          actions={layerActions}
         />
       ) : null}
     </div>
