@@ -53,6 +53,11 @@ type DrawContext = {
     dw: number,
     dh: number,
   ): void;
+  save(): void;
+  restore(): void;
+  beginPath(): void;
+  rect(x: number, y: number, width: number, height: number): void;
+  clip(): void;
   getImageData(x: number, y: number, width: number, height: number): ImageData;
 };
 
@@ -116,11 +121,60 @@ export async function exportFlattened(
   return { bytes, mediaType: MEDIA_TYPE[options.format] };
 }
 
-async function paintLayers(context: DrawContext, project: Project) {
+export async function exportStitch(
+  projects: Project[],
+  options: ExportOptions,
+): Promise<ExportedImage> {
+  if (projects.length < 2) {
+    throw new Error("Choose at least two saved screens to export a stitch.");
+  }
+
+  await ensureCodecs();
+  const width = Math.max(...projects.map((project) => project.canvasWidth));
+  const height = projects.reduce(
+    (total, project) => total + project.canvasHeight,
+    0,
+  );
+  const raster = await createRaster(width, height);
+  const context = raster.getContext("2d");
+  if (!context) throw new Error("The stitch could not be exported.");
+  if (options.format === "jpeg") {
+    context.fillStyle = JPEG_BACKGROUND;
+    context.fillRect(0, 0, width, height);
+  }
+
+  let offsetY = 0;
+  for (const project of projects) {
+    context.save();
+    context.beginPath();
+    context.rect(0, offsetY, project.canvasWidth, project.canvasHeight);
+    context.clip();
+    try {
+      await paintLayers(context, project, offsetY);
+    } finally {
+      context.restore();
+    }
+    offsetY += project.canvasHeight;
+  }
+
+  const image = context.getImageData(0, 0, width, height);
+  const bytes = await encodeRaster(image, options);
+  return { bytes, mediaType: MEDIA_TYPE[options.format] };
+}
+
+async function paintLayers(
+  context: DrawContext,
+  project: Project,
+  offsetY = 0,
+) {
   const layers = presentProject(project, measureRasterText(context));
   for (const layer of layers) {
-    if (layer.kind === "image") await paintImage(context, layer);
-    else drawTextLayer(context, layer);
+    const positioned = {
+      ...layer,
+      frame: { ...layer.frame, y: layer.frame.y + offsetY },
+    };
+    if (positioned.kind === "image") await paintImage(context, positioned);
+    else drawTextLayer(context, positioned);
   }
 }
 

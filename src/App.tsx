@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
   type FormEvent,
   type PointerEvent,
 } from "react";
@@ -34,7 +33,6 @@ import {
   setCanvasSize,
   setLayerVisibility,
   setView,
-  SUPPORTED_IMAGE_ACCEPT,
   supportedImageFormat,
   TEXT_COLOR_PRESETS,
   undo,
@@ -51,9 +49,14 @@ import {
 } from "./InlineTextEditor";
 import {
   exportFlattened,
+  exportStitch,
   type ExportFormat,
   type ExportOptions,
 } from "./export";
+import {
+  fileWorkflowForWindow,
+  type PickedFile,
+} from "./file-workflow";
 import { LayersPanel } from "./LayersPanel";
 import { presentProject } from "./presentation";
 import { PresentedText } from "./PresentedText";
@@ -65,10 +68,14 @@ const PRESETS = [
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 const TEXT_EDIT_FRAME_WIDTH = 6;
-const PROJECT_FILE_ACCEPT = ".screenshot-project.json,application/json";
-
-const TOOL_MENUS = ["File", "Edit", "Image", "Text", "View"] as const;
+const TOOL_MENUS = ["File", "Stitch", "Edit", "Image", "Text", "View"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
+
+type StitchScreen = {
+  id: string;
+  name: string;
+  project: Project;
+};
 
 const FONT_FAMILIES = [
   "Arial",
@@ -78,7 +85,7 @@ const FONT_FAMILIES = [
   "Courier New",
 ] as const;
 
-function readImage(file: File): Promise<{
+function readImage(file: PickedFile, mediaType: string): Promise<{
   source: string;
   width: number;
   height: number;
@@ -103,7 +110,9 @@ function readImage(file: File): Promise<{
         });
       image.src = source;
     };
-    reader.readAsDataURL(file);
+    const copy = new Uint8Array(file.bytes.byteLength);
+    copy.set(file.bytes);
+    reader.readAsDataURL(new Blob([copy.buffer], { type: mediaType }));
   });
 }
 
@@ -115,32 +124,6 @@ const EXPORT_EXTENSION: Record<ExportFormat, string> = {
 
 function showsExportQuality(format: ExportFormat, lossless: boolean): boolean {
   return format === "jpeg" || (format === "webp" && !lossless);
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-async function downloadExport(project: Project, options: ExportOptions) {
-  const exported = await exportFlattened(project, options);
-  const copy = new Uint8Array(exported.bytes.byteLength);
-  copy.set(exported.bytes);
-  downloadBlob(
-    new Blob([copy.buffer], { type: exported.mediaType }),
-    `screenshot.${EXPORT_EXTENSION[options.format]}`,
-  );
-}
-
-function downloadProject(project: Project) {
-  downloadBlob(
-    new Blob([saveProject(project)], { type: "application/json" }),
-    "untitled.screenshot-project.json",
-  );
 }
 
 function CropControls({
@@ -410,6 +393,7 @@ function TextControls({
 }
 
 export function App() {
+  const [files] = useState(() => fileWorkflowForWindow(window));
   const [project, setProject] = useState<Project>(openProject);
   const [width, setWidth] = useState(String(project.canvasWidth));
   const [height, setHeight] = useState(String(project.canvasHeight));
@@ -421,6 +405,8 @@ export function App() {
   const [exportQuality, setExportQuality] = useState(80);
   const [exportLossless, setExportLossless] = useState(false);
   const [exportError, setExportError] = useState<string>();
+  const [stitchScreens, setStitchScreens] = useState<StitchScreen[]>([]);
+  const [stitchError, setStitchError] = useState<string>();
   const [activeMenu, setActiveMenu] = useState<ToolMenu>("Image");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
@@ -507,20 +493,17 @@ export function App() {
     );
   }
 
-  async function importImage(event: ChangeEvent<HTMLInputElement>) {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file) return;
-
-    const format = supportedImageFormat(file.name, file.type);
-    if (!format) {
-      setImportError("Choose a JPG, PNG, WebP, GIF, or BMP image.");
-      return;
-    }
-
+  async function importImage() {
     try {
-      const image = await readImage(file);
+      const [file] = await files.importImages();
+      if (!file) return;
+
+      const format = supportedImageFormat(file.name, "");
+      if (!format) {
+        setImportError("Choose a JPG, PNG, WebP, GIF, or BMP image.");
+        return;
+      }
+      const image = await readImage(file, format);
       const id = crypto.randomUUID();
       setProject((current) =>
         addImageLayer(current, {
@@ -540,14 +523,11 @@ export function App() {
     }
   }
 
-  async function openProjectFile(event: ChangeEvent<HTMLInputElement>) {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file) return;
-
+  async function openProjectFile() {
     try {
-      const opened = openSavedProject(await file.text());
+      const [file] = await files.openProjects();
+      if (!file) return;
+      const opened = openSavedProject(new TextDecoder().decode(file.bytes));
       setProject(opened);
       setWidth(String(opened.canvasWidth));
       setHeight(String(opened.canvasHeight));
@@ -570,6 +550,81 @@ export function App() {
           : "The project file could not be opened.",
       );
     }
+  }
+
+  async function addStitchScreens() {
+    try {
+      const selected = await files.openProjects({ multiple: true });
+      if (selected.length === 0) return;
+
+      const opened: StitchScreen[] = [];
+      let failure: string | undefined;
+      for (const file of selected) {
+        try {
+          opened.push({
+            id: crypto.randomUUID(),
+            name: file.name,
+            project: openSavedProject(new TextDecoder().decode(file.bytes)),
+          });
+        } catch (error) {
+          failure =
+            error instanceof Error
+              ? error.message
+              : "The project file could not be opened.";
+        }
+      }
+      if (opened.length > 0) {
+        setStitchScreens((current) => [...current, ...opened]);
+      }
+      setStitchError(failure);
+    } catch (error) {
+      setStitchError(
+        error instanceof Error
+          ? error.message
+          : "The project files could not be opened.",
+      );
+    }
+  }
+
+  function moveStitchScreen(index: number, direction: -1 | 1) {
+    setStitchScreens((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      const [screen] = next.splice(index, 1);
+      if (!screen) return current;
+      next.splice(target, 0, screen);
+      return next;
+    });
+  }
+
+  function currentExportOptions(): ExportOptions {
+    return {
+      format: exportFormat,
+      quality: exportQuality,
+      lossless: exportFormat === "webp" && exportLossless,
+    };
+  }
+
+  async function saveCurrentExport() {
+    const options = currentExportOptions();
+    const exported = await exportFlattened(project, options);
+    await files.saveExport({
+      ...exported,
+      filename: `screenshot.${EXPORT_EXTENSION[options.format]}`,
+    });
+  }
+
+  async function saveStitchExport() {
+    const options = currentExportOptions();
+    const exported = await exportStitch(
+      stitchScreens.map((screen) => screen.project),
+      options,
+    );
+    await files.saveExport({
+      ...exported,
+      filename: `stitch.${EXPORT_EXTENSION[options.format]}`,
+    });
   }
 
   function placeTextBox(event: { clientX: number; clientY: number }) {
@@ -903,26 +958,32 @@ export function App() {
         >
           {activeMenu === "File" ? (
             <div className="control-group">
-              <button type="button" onClick={() => downloadProject(project)}>
+              <button
+                type="button"
+                onClick={() => {
+                  void files.saveProject(saveProject(project)).then(
+                    () => setProjectFileError(undefined),
+                    (error: unknown) =>
+                      setProjectFileError(
+                        error instanceof Error
+                          ? error.message
+                          : "The project file could not be saved.",
+                      ),
+                  );
+                }}
+              >
                 Save project
               </button>
-              <label className="import-button">
+              <button
+                type="button"
+                onClick={() => void openProjectFile()}
+              >
                 Open project
-                <input
-                  type="file"
-                  accept={PROJECT_FILE_ACCEPT}
-                  onChange={openProjectFile}
-                />
-              </label>
+              </button>
               <span className="tool-divider" />
-              <label className="import-button">
+              <button type="button" onClick={() => void importImage()}>
                 Import image
-                <input
-                  type="file"
-                  accept={SUPPORTED_IMAGE_ACCEPT}
-                  onChange={importImage}
-                />
-              </label>
+              </button>
               <span className="tool-hint">
                 Projects keep editable layers · Images: JPG, PNG, WebP, GIF, or BMP
               </span>
@@ -971,11 +1032,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => {
-                  void downloadExport(project, {
-                    format: exportFormat,
-                    quality: exportQuality,
-                    lossless: exportFormat === "webp" && exportLossless,
-                  }).then(
+                  void saveCurrentExport().then(
                     () => setExportError(undefined),
                     (error: unknown) =>
                       setExportError(
@@ -992,6 +1049,69 @@ export function App() {
                 PNG stays sharp and can be transparent. JPG is opaque. Lower
                 quality makes JPG and WebP smaller.
               </span>
+            </div>
+          ) : null}
+
+          {activeMenu === "Stitch" ? (
+            <div className="control-group stitch-panel">
+              <button type="button" onClick={() => void addStitchScreens()}>
+                Add screens
+              </button>
+              <ol className="stitch-list">
+                {stitchScreens.map((screen, index) => (
+                  <li key={screen.id}>
+                    <span>{screen.name}</span>
+                    <span>
+                      {screen.project.canvasWidth}×{screen.project.canvasHeight}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => moveStitchScreen(index, -1)}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === stitchScreens.length - 1}
+                      onClick={() => moveStitchScreen(index, 1)}
+                    >
+                      Down
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStitchScreens((current) =>
+                          current.filter((item) => item.id !== screen.id),
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <button
+                type="button"
+                onClick={() => {
+                  void saveStitchExport().then(
+                    () => setStitchError(undefined),
+                    (error: unknown) =>
+                      setStitchError(
+                        error instanceof Error
+                          ? error.message
+                          : "The stitch could not be exported.",
+                      ),
+                  );
+                }}
+              >
+                Export stitch
+              </button>
+              <span className="tool-hint">
+                Add saved screens and order them from top to bottom. Export uses
+                the format and quality selected under File.
+              </span>
+              {stitchError ? <p className="import-error">{stitchError}</p> : null}
             </div>
           ) : null}
 
