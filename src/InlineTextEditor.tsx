@@ -1,15 +1,16 @@
 import { Color, TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef, type MutableRefObject, type ReactNode } from "react";
+import { useEffect, useRef, type MutableRefObject } from "react";
 import {
   contentToDocument,
   documentToContent,
   parseColoredText,
-  type TextColorRun,
   type TextContent,
   type TextLayer,
 } from "./editor";
+import type { TextLayerPresentation } from "./presentation";
+import { PresentedText } from "./PresentedText";
 
 export type TextEditorHandle = {
   applyColor: (color: string) => void;
@@ -17,33 +18,13 @@ export type TextEditorHandle = {
   preserveOnBlur: () => void;
 };
 
-export function ColoredText({
-  text,
-  colorRuns,
-}: {
-  text: string;
-  colorRuns: TextColorRun[];
-}) {
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  for (const run of colorRuns) {
-    if (cursor < run.start) parts.push(text.slice(cursor, run.start));
-    parts.push(
-      <span style={{ color: run.color }} key={`${run.start}-${run.end}`}>
-        {text.slice(run.start, run.end)}
-      </span>,
-    );
-    cursor = run.end;
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts;
-}
-
 export function InlineTextEditor({
   layer,
   selectText,
   editorHandle,
+  presentation,
   onSelectionChange,
+  onPreview,
   onColorCommit,
   onCommit,
   onCancel,
@@ -51,7 +32,9 @@ export function InlineTextEditor({
   layer: TextLayer;
   selectText: boolean;
   editorHandle: MutableRefObject<TextEditorHandle | null>;
+  presentation: TextLayerPresentation;
   onSelectionChange: (hasSelection: boolean) => void;
+  onPreview: (content: TextContent) => void;
   onColorCommit: (content: TextContent) => void;
   onCommit: (content: TextContent) => void;
   onCancel: () => void;
@@ -90,6 +73,9 @@ export function InlineTextEditor({
     },
     onSelectionUpdate: ({ editor: current }) => {
       onSelectionChange(!current.state.selection.empty);
+    },
+    onUpdate: ({ editor: current }) => {
+      onPreview(documentToContent(current.getJSON()));
     },
     onBlur: ({ editor: current }) => {
       if (preserveBlur.current) return;
@@ -147,19 +133,24 @@ export function InlineTextEditor({
   }, [editorHandle, onSelectionChange]);
 
   return (
-    <EditorContent
-      editor={editor}
-      className="rich-text-surface"
-      onBlur={commit}
-      onPointerDown={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-      onMouseUp={reportSelection}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key !== "Escape") return;
-        event.preventDefault();
-        onCancel();
-      }}
-    />
+    <div className="inline-text-editor-shell">
+      <div className="inline-text-preview" aria-hidden="true">
+        <PresentedText text={presentation} />
+      </div>
+      <EditorContent
+        editor={editor}
+        className="rich-text-surface inline-text-editor"
+        onBlur={commit}
+        onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onMouseUp={reportSelection}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          onCancel();
+        }}
+      />
+    </div>
   );
 }

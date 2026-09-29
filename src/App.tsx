@@ -11,7 +11,11 @@ import {
   useControlEditLifetime,
   type ControlEdit,
 } from "./control-edit";
-import { imageLayerStyles } from "./dom-presentation";
+import {
+  imageLayerStyles,
+  measureDomText,
+  textLayerStyles,
+} from "./dom-presentation";
 import {
   addImageLayer,
   addTextLayer,
@@ -42,7 +46,6 @@ import {
   type UndoableEditUpdate,
 } from "./editor";
 import {
-  ColoredText,
   InlineTextEditor,
   type TextEditorHandle,
 } from "./InlineTextEditor";
@@ -53,6 +56,7 @@ import {
 } from "./export";
 import { LayersPanel } from "./LayersPanel";
 import { presentProject } from "./presentation";
+import { PresentedText } from "./PresentedText";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -421,6 +425,10 @@ export function App() {
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
   const [hasTextSelection, setHasTextSelection] = useState(false);
+  const [editingTextPreview, setEditingTextPreview] = useState<{
+    layerId: string;
+    content: TextContent;
+  }>();
   const [placingText, setPlacingText] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const textEditor = useRef<TextEditorHandle | null>(null);
@@ -432,6 +440,16 @@ export function App() {
     selectedLayer?.kind === "image" ? selectedLayer : undefined;
   const selectedTextLayer =
     selectedLayer?.kind === "text" ? selectedLayer : undefined;
+  const presentationProject = editingTextPreview
+    ? {
+        ...project,
+        layers: project.layers.map((layer) =>
+          layer.kind === "text" && layer.id === editingTextPreview.layerId
+            ? { ...layer, ...editingTextPreview.content }
+            : layer,
+        ),
+      }
+    : project;
 
   function beginControlEdit<Value>(
     update: (value: Value) => UndoableEditUpdate | undefined,
@@ -455,6 +473,20 @@ export function App() {
         : undefined,
     );
   });
+
+  function startTextEditing(layerId: string) {
+    setEditingTextLayerId(layerId);
+    setEditingTextPreview(undefined);
+    setSelectTextOnEdit(true);
+    setHasTextSelection(false);
+  }
+
+  function resetTextEditing() {
+    setEditingTextLayerId(undefined);
+    setEditingTextPreview(undefined);
+    setSelectTextOnEdit(false);
+    setHasTextSelection(false);
+  }
 
   function applySize(nextWidth: number, nextHeight: number) {
     if (!Number.isFinite(nextWidth) || !Number.isFinite(nextHeight)) return;
@@ -527,9 +559,7 @@ export function App() {
         ),
       );
       setSelectedLayerId(undefined);
-      setEditingTextLayerId(undefined);
-      setSelectTextOnEdit(false);
-      setHasTextSelection(false);
+      resetTextEditing();
       setPlacingText(false);
       setProjectFileError(undefined);
       setImportError(undefined);
@@ -556,16 +586,14 @@ export function App() {
     const id = crypto.randomUUID();
     setProject((current) => addTextLayer(current, id, { x, y }));
     setSelectedLayerId(id);
-    setEditingTextLayerId(id);
-    setSelectTextOnEdit(true);
-    setHasTextSelection(false);
+    startTextEditing(id);
     setPlacingText(false);
     setActiveMenu("Text");
   }
 
   function resizeTextBox(
     event: PointerEvent<HTMLSpanElement>,
-    layer: TextLayer,
+    layer: { id: string; x: number; wrapWidth: number },
     corner: "nw" | "ne" | "sw" | "se",
   ) {
     event.stopPropagation();
@@ -630,16 +658,13 @@ export function App() {
 
   function beginTextEditing(layerId: string) {
     setSelectedLayerId(layerId);
-    setEditingTextLayerId(layerId);
-    setSelectTextOnEdit(true);
+    startTextEditing(layerId);
     setActiveMenu("Text");
   }
 
   function finishTextEditing(layerId: string, content: TextContent) {
     commitTextContent(layerId, content);
-    setEditingTextLayerId(undefined);
-    setSelectTextOnEdit(false);
-    setHasTextSelection(false);
+    resetTextEditing();
   }
 
   function commitTextContent(layerId: string, content: TextContent) {
@@ -663,9 +688,7 @@ export function App() {
   }
 
   function cancelTextEditing() {
-    setEditingTextLayerId(undefined);
-    setSelectTextOnEdit(false);
-    setHasTextSelection(false);
+    resetTextEditing();
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -1168,7 +1191,7 @@ export function App() {
             transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
           }}
         >
-          {presentProject(project).map((layer) => {
+          {presentProject(presentationProject, measureDomText).map((layer) => {
             if (layer.kind === "image") {
               const styles = imageLayerStyles(layer);
               return (
@@ -1196,44 +1219,37 @@ export function App() {
               );
             }
 
+            const styles = textLayerStyles(layer);
+            const editingLayer =
+              editingTextLayerId === layer.id &&
+              selectedTextLayer?.id === layer.id
+                ? selectedTextLayer
+                : undefined;
             return (
               <div
                 className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
                 key={layer.id}
                 style={{
-                  left:
-                    layer.x -
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH
-                      : 0),
-                  top:
-                    layer.y -
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH
-                      : 0),
+                  ...styles.frame,
+                  left: layer.frame.x - (editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0),
+                  top: layer.frame.y - (editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0),
                   width:
-                    layer.wrapWidth +
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH * 2
-                      : 0),
+                    layer.frame.width +
+                    (editingLayer ? TEXT_EDIT_FRAME_WIDTH * 2 : 0),
                   minHeight:
-                    layer.fontSize * layer.lineSpacing +
-                    (editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH * 2
-                      : 0),
-                  padding:
-                    editingTextLayerId === layer.id
-                      ? TEXT_EDIT_FRAME_WIDTH
-                      : 0,
-                  fontFamily: layer.fontFamily,
-                  fontSize: layer.fontSize,
-                  fontWeight: layer.bold ? 700 : 400,
-                  lineHeight: layer.lineSpacing,
-                  WebkitTextStroke: `${layer.outlineWidth}px ${layer.outlineColor}`,
-                  opacity: layer.opacity,
+                    layer.frame.height +
+                    (editingLayer ? TEXT_EDIT_FRAME_WIDTH * 2 : 0),
+                  padding: editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0,
                 }}
                 title={layer.name}
-                onPointerDown={(event) => onLayerPointerDown(event, layer)}
+                onPointerDown={(event) =>
+                  onLayerPointerDown(event, {
+                    id: layer.id,
+                    kind: layer.kind,
+                    x: layer.frame.x,
+                    y: layer.frame.y,
+                  })
+                }
                 onDoubleClick={(event) => {
                   event.stopPropagation();
                   beginTextEditing(layer.id);
@@ -1244,22 +1260,36 @@ export function App() {
                       <span
                         key={corner}
                         className={`text-resize-handle ${corner}`}
-                        onPointerDown={(event) => resizeTextBox(event, layer, corner)}
+                        onPointerDown={(event) =>
+                          resizeTextBox(
+                            event,
+                            {
+                              id: layer.id,
+                              x: layer.frame.x,
+                              wrapWidth: layer.frame.width,
+                            },
+                            corner,
+                          )
+                        }
                       />
                     ))
                   : null}
-                {editingTextLayerId === layer.id ? (
+                {editingLayer ? (
                   <InlineTextEditor
-                    layer={layer}
+                    layer={editingLayer}
+                    presentation={layer}
                     selectText={selectTextOnEdit}
                     editorHandle={textEditor}
                     onSelectionChange={setHasTextSelection}
+                    onPreview={(content) =>
+                      setEditingTextPreview({ layerId: layer.id, content })
+                    }
                     onColorCommit={textColorEdit.preview}
                     onCommit={(content) => finishTextEditing(layer.id, content)}
                     onCancel={cancelTextEditing}
                   />
                 ) : (
-                  <ColoredText text={layer.text} colorRuns={layer.colorRuns} />
+                  <PresentedText text={layer} />
                 )}
               </div>
             );
