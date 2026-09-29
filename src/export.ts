@@ -1,7 +1,9 @@
 import encodeJpeg from "@jsquash/jpeg/encode";
 import encodePng from "@jsquash/png/encode";
 import encodeWebp from "@jsquash/webp/encode";
-import type { ImageLayer, Project, TextLayer } from "./editor";
+import type { Project, TextLayer } from "./editor";
+import { presentProject, type ImageLayerPresentation } from "./presentation";
+import { drawImageLayer } from "./raster-presentation";
 
 export type ExportFormat = "png" | "jpeg" | "webp";
 
@@ -111,8 +113,7 @@ export async function exportFlattened(
 }
 
 async function paintLayers(context: DrawContext, project: Project) {
-  for (const layer of project.layers) {
-    if (!layer.visible) continue;
+  for (const layer of presentProject(project)) {
     if (layer.kind === "image") await paintImage(context, layer);
     else paintText(context, layer);
   }
@@ -219,21 +220,12 @@ function textColor(layer: TextLayer, index: number): string {
   );
 }
 
-async function paintImage(context: DrawContext, layer: ImageLayer) {
+async function paintImage(
+  context: DrawContext,
+  layer: ImageLayerPresentation,
+) {
   const image = await loadSource(layer.source);
-  context.globalAlpha = layer.opacity;
-  context.drawImage(
-    image,
-    layer.crop.x,
-    layer.crop.y,
-    layer.crop.width,
-    layer.crop.height,
-    layer.x,
-    layer.y,
-    layer.crop.width * layer.scale,
-    layer.crop.height * layer.scale,
-  );
-  context.globalAlpha = 1;
+  drawImageLayer(context, image, layer);
 }
 
 async function loadSource(source: string): Promise<CanvasImageSource> {
