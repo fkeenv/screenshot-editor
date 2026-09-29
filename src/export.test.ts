@@ -274,7 +274,7 @@ test("an upper image covers a lower image", async () => {
   expect(Array.from(image.data)).toEqual([255, 0, 0, 255]);
 });
 
-test("export paints colored text", async () => {
+test("export paints colored and outlined text", async () => {
   let project = setCanvasSize(openProject(), 80, 40);
   project = addTextLayer(project, "text-1", { x: 0, y: 0 });
   project = editTextLayer(project, "text-1", {
@@ -283,7 +283,8 @@ test("export paints colored text", async () => {
     fontFamily: "Arial",
     fontSize: 32,
     bold: true,
-    outlineWidth: 0,
+    outlineWidth: 2,
+    outlineColor: "#000000",
     wrapWidth: 80,
   });
 
@@ -291,12 +292,15 @@ test("export paints colored text", async () => {
     (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
   );
   const painted = [];
+  const outlined = [];
   for (let index = 0; index < image.data.length; index += 4) {
     const red = image.data[index] ?? 0;
     const green = image.data[index + 1] ?? 0;
     const blue = image.data[index + 2] ?? 0;
     const alpha = image.data[index + 3] ?? 0;
     if (red > 200 && blue > 200 && green < 40 && alpha > 200) painted.push(index);
+    if (red < 40 && green < 40 && blue < 40 && alpha > 100) outlined.push(index);
   }
   expect(painted.length).toBeGreaterThan(0);
+  expect(outlined.length).toBeGreaterThan(0);
 });

@@ -3,13 +3,17 @@ import {
   addImageLayer,
   addTextLayer,
   cropImageLayer,
+  editTextLayer,
   moveLayer,
   openProject,
   scaleImageLayer,
   setLayerOpacity,
   setLayerVisibility,
 } from "./editor";
-import { presentProject } from "./presentation";
+import { presentProject, type TextFontPresentation } from "./presentation";
+
+const measureMonospace = (_font: TextFontPresentation, text: string) =>
+  text.length * 10;
 
 test("project presentation resolves image visibility, order, and geometry", () => {
   let project = openProject();
@@ -49,7 +53,7 @@ test("project presentation resolves image visibility, order, and geometry", () =
   });
   project = moveLayer(project, "upper", 20, 20);
 
-  expect(presentProject(project)).toEqual([
+  expect(presentProject(project, measureMonospace)).toEqual([
     {
       kind: "image",
       id: "lower",
@@ -94,10 +98,102 @@ test("project presentation keeps visible text between image layers", () => {
   });
 
   expect(
-    presentProject(project).map((layer) => [layer.kind, layer.id]),
+    presentProject(project, measureMonospace).map((layer) => [layer.kind, layer.id]),
   ).toEqual([
     ["image", "lower"],
     ["text", "caption"],
     ["image", "upper"],
+  ]);
+});
+
+test("project presentation wraps multiline text and long words", () => {
+  let project = addTextLayer(openProject(), "caption", { x: 12, y: 18 });
+  project = editTextLayer(project, "caption", {
+    text: "one two\nLONGWORD",
+    fontFamily: "Courier New",
+    fontSize: 10,
+    lineSpacing: 1.5,
+    wrapWidth: 40,
+  });
+
+  expect(presentProject(project, measureMonospace)).toEqual([
+    {
+      kind: "text",
+      id: "caption",
+      name: "Text",
+      opacity: 1,
+      frame: { x: 12, y: 18, width: 40, height: 60 },
+      font: {
+        family: "Courier New",
+        size: 10,
+        weight: 400,
+      },
+      lineHeight: 15,
+      outline: { width: 2, color: "#000000" },
+      lines: [
+        {
+          y: 0,
+          segments: [
+            { text: "one ", color: "#ffffff", offset: 0, width: 40 },
+          ],
+        },
+        {
+          y: 15,
+          segments: [
+            { text: "two", color: "#ffffff", offset: 0, width: 30 },
+          ],
+        },
+        {
+          y: 30,
+          segments: [
+            { text: "LONG", color: "#ffffff", offset: 0, width: 40 },
+          ],
+        },
+        {
+          y: 45,
+          segments: [
+            { text: "WORD", color: "#ffffff", offset: 0, width: 40 },
+          ],
+        },
+      ],
+    },
+  ]);
+});
+
+test("project presentation keeps empty lines and splits color runs", () => {
+  let project = addTextLayer(openProject(), "caption", { x: 0, y: 0 });
+  project = editTextLayer(project, "caption", {
+    text: "A B\n\nCD",
+    colorRuns: [
+      { start: 0, end: 1, color: "#ff0000" },
+      { start: 2, end: 3, color: "#0000ff" },
+      { start: 5, end: 7, color: "#00ff00" },
+    ],
+    fontSize: 10,
+    lineSpacing: 1.5,
+    wrapWidth: 30,
+  });
+
+  const [caption] = presentProject(project, measureMonospace);
+  expect(caption?.kind).toBe("text");
+  if (caption?.kind !== "text") return;
+
+  expect(caption.frame.height).toBe(45);
+  expect(caption.lines).toEqual([
+    {
+      y: 0,
+      segments: [
+        { text: "A", color: "#ff0000", offset: 0, width: 10 },
+        { text: " ", color: "#ffffff", offset: 10, width: 10 },
+        { text: "B", color: "#0000ff", offset: 20, width: 10 },
+      ],
+    },
+    { y: 15, segments: [] },
+    {
+      y: 30,
+      segments: [
+        { text: "CD", color: "#00ff00", offset: 0, width: 20 },
+      ],
+    },
   ]);
 });

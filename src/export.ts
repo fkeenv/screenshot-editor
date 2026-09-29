@@ -1,9 +1,13 @@
 import encodeJpeg from "@jsquash/jpeg/encode";
 import encodePng from "@jsquash/png/encode";
 import encodeWebp from "@jsquash/webp/encode";
-import type { Project, TextLayer } from "./editor";
+import type { Project } from "./editor";
 import { presentProject, type ImageLayerPresentation } from "./presentation";
-import { drawImageLayer } from "./raster-presentation";
+import {
+  drawImageLayer,
+  drawTextLayer,
+  measureRasterText,
+} from "./raster-presentation";
 
 export type ExportFormat = "png" | "jpeg" | "webp";
 
@@ -113,111 +117,11 @@ export async function exportFlattened(
 }
 
 async function paintLayers(context: DrawContext, project: Project) {
-  for (const layer of presentProject(project)) {
+  const layers = presentProject(project, measureRasterText(context));
+  for (const layer of layers) {
     if (layer.kind === "image") await paintImage(context, layer);
-    else paintText(context, layer);
+    else drawTextLayer(context, layer);
   }
-}
-
-function paintText(context: DrawContext, layer: TextLayer) {
-  context.globalAlpha = layer.opacity;
-  context.font = canvasFont(layer);
-  context.textBaseline = "top";
-  context.lineWidth = layer.outlineWidth;
-  context.strokeStyle = layer.outlineColor;
-  context.lineJoin = "round";
-  const lineHeight = layer.fontSize * layer.lineSpacing;
-  const lines = layoutLines(context, layer.text, Math.max(1, layer.wrapWidth));
-  lines.forEach((line, index) => {
-    drawLine(
-      context,
-      layer,
-      line.start,
-      line.end,
-      layer.x,
-      layer.y + index * lineHeight,
-    );
-  });
-  context.globalAlpha = 1;
-}
-
-function canvasFont(layer: TextLayer): string {
-  const family = layer.fontFamily.includes(" ")
-    ? `"${layer.fontFamily.replaceAll('"', "")}"`
-    : layer.fontFamily;
-  return `${layer.bold ? 700 : 400} ${layer.fontSize}px ${family}, sans-serif`;
-}
-
-function layoutLines(
-  context: DrawContext,
-  text: string,
-  wrapWidth: number,
-): { start: number; end: number }[] {
-  const lines: { start: number; end: number }[] = [];
-  let lineStart = 0;
-  for (let index = 0; index <= text.length; index += 1) {
-    if (index !== text.length && text[index] !== "\n") continue;
-    lines.push(...wrapRange(context, text, lineStart, index, wrapWidth));
-    lineStart = index + 1;
-  }
-  return lines;
-}
-
-function wrapRange(
-  context: DrawContext,
-  text: string,
-  start: number,
-  end: number,
-  wrapWidth: number,
-): { start: number; end: number }[] {
-  const lines: { start: number; end: number }[] = [];
-  let cursor = start;
-  while (cursor < end) {
-    let fit = cursor;
-    let breakAt = -1;
-    for (let index = cursor; index < end; index += 1) {
-      const width = context.measureText(text.slice(cursor, index + 1)).width;
-      if (width > wrapWidth) break;
-      fit = index + 1;
-      if (text[index] === " ") breakAt = index + 1;
-    }
-    if (fit === cursor) fit = cursor + 1;
-    else if (fit < end && breakAt > cursor) fit = breakAt;
-    lines.push({ start: cursor, end: fit });
-    cursor = fit;
-  }
-  if (start === end) lines.push({ start, end });
-  return lines;
-}
-
-function drawLine(
-  context: DrawContext,
-  layer: TextLayer,
-  start: number,
-  end: number,
-  x: number,
-  y: number,
-) {
-  let cursor = start;
-  let drawX = x;
-  while (cursor < end) {
-    const color = textColor(layer, cursor);
-    let next = cursor + 1;
-    while (next < end && textColor(layer, next) === color) next += 1;
-    const segment = layer.text.slice(cursor, next);
-    if (layer.outlineWidth > 0) context.strokeText(segment, drawX, y);
-    context.fillStyle = color;
-    context.fillText(segment, drawX, y);
-    drawX += context.measureText(segment).width;
-    cursor = next;
-  }
-}
-
-function textColor(layer: TextLayer, index: number): string {
-  return (
-    layer.colorRuns.find((run) => index >= run.start && index < run.end)?.color ??
-    "#ffffff"
-  );
 }
 
 async function paintImage(
