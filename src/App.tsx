@@ -1,4 +1,5 @@
 import { Button } from "@mantine/core";
+import type { AppearancePreference } from "./appearance";
 import {
   useEffect,
   useRef,
@@ -392,7 +393,12 @@ function TextControls({
   );
 }
 
-export function App() {
+type AppProps = {
+  appearance: AppearancePreference;
+  onAppearanceChange: (value: AppearancePreference) => void;
+};
+
+export function App({ appearance, onAppearanceChange }: AppProps) {
   const [files] = useState(() => fileWorkflowForWindow(window));
   const [project, setProject] = useState<Project>(openProject);
   const [width, setWidth] = useState(String(project.canvasWidth));
@@ -937,6 +943,20 @@ export function App() {
           <span className="document-status">
             {project.canvasWidth}×{project.canvasHeight} · {Math.round(project.zoom * 100)}%
           </span>
+          <label className="appearance-control">
+            <span>Appearance</span>
+            <select
+              aria-label="Appearance"
+              value={appearance}
+              onChange={(event) =>
+                onAppearanceChange(event.target.value as AppearancePreference)
+              }
+            >
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
           <Button
             variant="subtle"
             color="gray"

@@ -57,11 +57,13 @@ function LayerRow({
       withBorder
       p="xs"
       radius="sm"
-      bg={selectedLayerId === layer.id ? "dark.6" : "dark.7"}
       style={{
+        background: selectedLayerId === layer.id
+          ? "var(--layer-selected)"
+          : "var(--layer-surface)",
         borderColor:
           selectedLayerId === layer.id
-            ? "var(--mantine-primary-color-filled)"
+            ? "var(--accent)"
             : undefined,
       }}
       onClick={() => actions.select(layer.id)}
@@ -254,13 +256,13 @@ export function LayersPanel({
       aria-label="Layers"
       w={{ base: 220, sm: 280 }}
       miw={{ base: 220, sm: 280 }}
-      bg="dark.8"
       style={{
+        background: "var(--panel-bg)",
         display: "flex",
         flex: "0 0 auto",
         flexDirection: "column",
         overflow: "hidden",
-        borderLeft: "1px solid var(--mantine-color-dark-4)",
+        borderLeft: "1px solid var(--border)",
       }}
     >
       <Group h={42} px="sm" justify="space-between">
