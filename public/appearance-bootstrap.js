@@ -12,9 +12,7 @@
   try {
     const stored = window.localStorage.getItem(key);
     if (valid(stored)) preference = stored;
-  } catch {
-    // Storage may be unavailable; the editor can still use the system theme.
-  }
+  } catch {}
 
   function resolved() {
     return preference === "system"
@@ -42,9 +40,7 @@
       preference = next;
       try {
         window.localStorage.setItem(key, next);
-      } catch {
-        // Keep the chosen theme for this session even if persistence is blocked.
-      }
+      } catch {}
       apply();
     },
   };
