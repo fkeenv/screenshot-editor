@@ -425,6 +425,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     content: TextContent;
   }>();
   const [placingText, setPlacingText] = useState(false);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
   const textEditor = useRef<TextEditorHandle | null>(null);
@@ -538,6 +539,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       );
       setSelectedLayerId(id);
       setActiveMenu("Properties");
+      setWelcomeDismissed(true);
       setImportError(undefined);
     } catch (error) {
       setImportError(
@@ -563,6 +565,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       );
       setSelectedLayerId(undefined);
       setActiveMenu("Properties");
+      setWelcomeDismissed(true);
       resetTextEditing();
       setPlacingText(false);
       setProjectFileError(undefined);
@@ -668,6 +671,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     startTextEditing(id);
     setPlacingText(false);
     setActiveMenu("Properties");
+    setWelcomeDismissed(true);
   }
 
   function resizeTextBox(
@@ -1014,7 +1018,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               type="button"
               aria-pressed={placingText}
               className={placingText ? "active-control" : undefined}
-              onClick={() => setPlacingText((current) => !current)}
+              onClick={() => {
+                setPlacingText((current) => !current);
+                setWelcomeDismissed(true);
+              }}
             >
               Add text
             </button>
@@ -1366,6 +1373,30 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         ref={viewportRef}
         onPointerDown={onViewportPointerDown}
       >
+        {!welcomeDismissed && project.layers.length === 0 ? (
+          <section
+            className="welcome-screen"
+            aria-label="Start a project"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="welcome-card">
+              <span className="welcome-eyebrow">New canvas</span>
+              <h1>Start here</h1>
+              <p>Choose a screenshot, open a saved project, or work on a blank canvas.</p>
+              <div className="welcome-actions">
+                <button type="button" className="welcome-primary" onClick={() => void importImage()}>
+                  Choose screenshot
+                </button>
+                <button type="button" onClick={() => void openProjectFile()}>
+                  Open project
+                </button>
+                <button type="button" onClick={() => setWelcomeDismissed(true)}>
+                  Start blank
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
         <div
           className="canvas-anchor"
           style={{
