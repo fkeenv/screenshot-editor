@@ -81,7 +81,7 @@ button:disabled {
 
 .app {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
 }
@@ -96,7 +96,7 @@ button:disabled {
 .menu-row {
   display: flex;
   min-height: 42px;
-  align-items: stretch;
+  align-items: center;
   padding: 0 12px;
   gap: 8px;
   border-bottom: 1px solid var(--border);
@@ -112,32 +112,76 @@ button:disabled {
   white-space: nowrap;
 }
 
-.menu-tabs {
+.project-actions,
+.toolbar-group {
   display: flex;
-  gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  align-items: center;
+  gap: 6px;
 }
 
-.menu-tabs button {
-  flex: 0 0 auto;
-  padding: 0 11px;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: var(--muted);
+.project-actions button {
+  padding: 4px 9px;
+  font-size: 12px;
 }
 
-.menu-tabs button:hover {
-  background: var(--field-hover);
-  color: var(--text-strong);
+.main-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
 }
 
-.menu-tabs button.active {
-  border-bottom-color: var(--accent);
-  color: var(--text-strong);
+.main-toolbar button {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.main-toolbar .primary-action {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.main-toolbar .primary-action:hover {
+  filter: brightness(1.08);
+}
+
+.toolbar-end {
+  margin-left: auto;
+}
+
+.zoom-group {
+  gap: 0;
+}
+
+.zoom-group button {
+  width: 30px;
+  padding: 0;
+  font-size: 18px;
+}
+
+.zoom-group .fit-button {
+  width: auto;
+  margin-left: 6px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.zoom-group .zoom-value {
+  min-width: 52px;
+  padding: 0 5px;
+}
+
+.workspace-errors {
+  padding: 5px 12px;
+  color: var(--error);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .document-status {
@@ -169,14 +213,54 @@ button:disabled {
 }
 
 .tool-panel {
-  display: flex;
-  min-height: 64px;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  grid-column: 1;
+  grid-row: 2;
+  width: 250px;
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
   background: var(--panel-bg);
+}
+
+.menu-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome-bg);
+}
+
+.menu-tabs button {
+  padding: 10px 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu-tabs button:hover {
+  background: var(--field-hover);
+  color: var(--text-strong);
+}
+
+.menu-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text-strong);
+}
+
+#active-tool-panel {
+  padding: 12px;
+}
+
+.panel-heading {
+  width: 100%;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .control-group {
@@ -223,9 +307,9 @@ button:disabled {
 }
 
 .tool-divider {
-  width: 1px;
-  height: 34px;
-  align-self: center;
+  width: 100%;
+  height: 1px;
+  margin: 8px 0;
   background: var(--border);
 }
 
@@ -277,14 +361,26 @@ button:disabled {
 
 .stitch-list li {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  padding: 8px;
+  background: var(--field-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .stitch-list li span:first-child {
+  flex-basis: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.stitch-list li span:nth-child(2) {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .composer {
@@ -401,6 +497,8 @@ button.active-control {
 
 .viewport {
   position: relative;
+  grid-column: 2;
+  grid-row: 2;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -408,6 +506,14 @@ button.active-control {
   cursor: grab;
   background: var(--app-bg);
   touch-action: none;
+}
+
+.canvas-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .viewport:active {
@@ -419,8 +525,10 @@ button.active-control {
   overflow: hidden;
   background: #111827;
   border: 1px solid #52525b;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 22%);
   transform-origin: top left;
   user-select: none;
+  pointer-events: auto;
 }
 
 .canvas-layer {
@@ -553,16 +661,11 @@ button.active-control {
     display: none;
   }
 
-  .menu-tabs {
-    flex: 1 1 auto;
-  }
-
   .appearance-control span {
     display: none;
   }
 
   .tool-panel {
-    max-height: 210px;
-    overflow-y: auto;
+    width: 220px;
   }
 }

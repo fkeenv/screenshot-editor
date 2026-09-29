@@ -257,6 +257,8 @@ export function LayersPanel({
       w={{ base: 220, sm: 280 }}
       miw={{ base: 220, sm: 280 }}
       style={{
+        gridColumn: 3,
+        gridRow: 2,
         background: "var(--panel-bg)",
         display: "flex",
         flex: "0 0 auto",

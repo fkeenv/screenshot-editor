@@ -1,4 +1,3 @@
-import { Button } from "@mantine/core";
 import type { AppearancePreference } from "./appearance";
 import {
   useEffect,
@@ -69,7 +68,7 @@ const PRESETS = [
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 const TEXT_EDIT_FRAME_WIDTH = 6;
-const TOOL_MENUS = ["File", "Stitch", "Edit", "Image", "Text", "View"] as const;
+const TOOL_MENUS = ["Export", "Stitch", "Image", "Text"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
 
 type StitchScreen = {
@@ -423,8 +422,12 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }>();
   const [placingText, setPlacingText] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
+  const [toolsPanelOpen, setToolsPanelOpen] = useState(
+    () => window.innerWidth > 1000,
+  );
   const textEditor = useRef<TextEditorHandle | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
   );
@@ -499,6 +502,17 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     );
   }
 
+  function fitCanvas() {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const zoom = Math.min(
+      (viewport.clientWidth - 48) / project.canvasWidth,
+      (viewport.clientHeight - 48) / project.canvasHeight,
+    );
+    if (zoom <= 0) return;
+    setProject((current) => setView(current, zoom, 0, 0));
+  }
+
   async function importImage() {
     try {
       const [file] = await files.importImages();
@@ -520,7 +534,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         }),
       );
       setSelectedLayerId(id);
-      setActiveMenu("Image");
       setImportError(undefined);
     } catch (error) {
       setImportError(
@@ -638,8 +651,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const border = Number.parseFloat(getComputedStyle(canvas).borderLeftWidth) || 0;
-    const x = (event.clientX - rect.left - border) / project.zoom;
-    const y = (event.clientY - rect.top - border) / project.zoom;
+    const x = (event.clientX - rect.left) / project.zoom - border;
+    const y = (event.clientY - rect.top) / project.zoom - border;
     if (x < 0 || y < 0 || x > project.canvasWidth || y > project.canvasHeight) {
       return;
     }
@@ -925,21 +938,27 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       <header className="editor-chrome">
         <div className="menu-row">
           <span className="app-title">Screenshot editor</span>
-          <nav className="menu-tabs" role="tablist" aria-label="Editor tools">
-            {TOOL_MENUS.map((menu) => (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeMenu === menu}
-                aria-controls="active-tool-panel"
-                className={activeMenu === menu ? "active" : ""}
-                key={menu}
-                onClick={() => setActiveMenu(menu)}
-              >
-                {menu}
-              </button>
-            ))}
-          </nav>
+          <div className="project-actions">
+            <button type="button" onClick={() => void openProjectFile()}>
+              Open project
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void files.saveProject(saveProject(project)).then(
+                  () => setProjectFileError(undefined),
+                  (error: unknown) =>
+                    setProjectFileError(
+                      error instanceof Error
+                        ? error.message
+                        : "The project file could not be saved.",
+                    ),
+                );
+              }}
+            >
+              Save project
+            </button>
+          </div>
           <span className="document-status">
             {project.canvasWidth}×{project.canvasHeight} · {Math.round(project.zoom * 100)}%
           </span>
@@ -957,57 +976,107 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               <option value="dark">Dark</option>
             </select>
           </label>
-          <Button
-            variant="subtle"
-            color="gray"
-            size="compact-sm"
-            style={{ alignSelf: "center", marginLeft: 8 }}
-            aria-controls="layers-panel"
-            aria-expanded={layersPanelOpen}
-            onClick={() => setLayersPanelOpen((open) => !open)}
-          >
-            {layersPanelOpen ? "Hide layers" : "Show layers"}
-          </Button>
         </div>
+        <div className="main-toolbar">
+          <div className="toolbar-group">
+            <button type="button" className="primary-action" onClick={() => void importImage()}>
+              Import image
+            </button>
+            <button
+              type="button"
+              aria-pressed={placingText}
+              className={placingText ? "active-control" : undefined}
+              onClick={() => setPlacingText((current) => !current)}
+            >
+              Add text
+            </button>
+          </div>
+          <div className="toolbar-group">
+            <button type="button" onClick={() => setProject(undo)} disabled={project.past.length === 0}>
+              Undo
+            </button>
+            <button type="button" onClick={() => setProject(redo)} disabled={project.future.length === 0}>
+              Redo
+            </button>
+          </div>
+          <div className="toolbar-group zoom-group">
+            <button type="button" aria-label="Zoom out" onClick={() => changeZoom(project.zoom / 1.25)}>−</button>
+            <span className="zoom-value">{Math.round(project.zoom * 100)}%</span>
+            <button type="button" aria-label="Zoom in" onClick={() => changeZoom(project.zoom * 1.25)}>+</button>
+            <button type="button" className="fit-button" aria-label="Fit canvas to stage" onClick={fitCanvas}>Fit</button>
+          </div>
+          <div className="toolbar-group toolbar-end">
+            <button
+              type="button"
+              onClick={() => {
+                void saveCurrentExport().then(
+                  () => setExportError(undefined),
+                  (error: unknown) =>
+                    setExportError(
+                      error instanceof Error
+                        ? error.message
+                        : "The image could not be exported.",
+                    ),
+                );
+              }}
+            >
+              Export {exportFormat.toUpperCase()}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMenu("Stitch");
+                setToolsPanelOpen(true);
+              }}
+            >
+              Stitch
+            </button>
+            <button
+              type="button"
+              aria-controls="tools-panel"
+              aria-expanded={toolsPanelOpen}
+              onClick={() => setToolsPanelOpen((open) => !open)}
+            >
+              {toolsPanelOpen ? "Hide tools" : "Tools"}
+            </button>
+            <button
+              type="button"
+              aria-controls="layers-panel"
+              aria-expanded={layersPanelOpen}
+              onClick={() => setLayersPanelOpen((open) => !open)}
+            >
+              {layersPanelOpen ? "Hide layers" : "Layers"}
+            </button>
+          </div>
+        </div>
+        {importError || projectFileError || exportError ? (
+          <div className="workspace-errors" role="alert">
+            {[importError, projectFileError, exportError].filter(Boolean).join(" · ")}
+          </div>
+        ) : null}
+      </header>
 
-        <div
-          className="tool-panel"
-          id="active-tool-panel"
-          role="tabpanel"
-          aria-label={`${activeMenu} tools`}
-        >
-          {activeMenu === "File" ? (
+      {toolsPanelOpen ? (
+        <aside className="tool-panel" id="tools-panel" aria-label="Workspace tools">
+          <nav className="menu-tabs" role="tablist" aria-label="Workspace tools">
+            {TOOL_MENUS.map((menu) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeMenu === menu}
+                aria-controls="active-tool-panel"
+                className={activeMenu === menu ? "active" : ""}
+                key={menu}
+                onClick={() => setActiveMenu(menu)}
+              >
+                {menu}
+              </button>
+            ))}
+          </nav>
+          <div id="active-tool-panel" role="tabpanel" aria-label={`${activeMenu} tools`}>
+          {activeMenu === "Export" ? (
             <div className="control-group">
-              <button
-                type="button"
-                onClick={() => {
-                  void files.saveProject(saveProject(project)).then(
-                    () => setProjectFileError(undefined),
-                    (error: unknown) =>
-                      setProjectFileError(
-                        error instanceof Error
-                          ? error.message
-                          : "The project file could not be saved.",
-                      ),
-                  );
-                }}
-              >
-                Save project
-              </button>
-              <button
-                type="button"
-                onClick={() => void openProjectFile()}
-              >
-                Open project
-              </button>
-              <span className="tool-divider" />
-              <button type="button" onClick={() => void importImage()}>
-                Import image
-              </button>
-              <span className="tool-hint">
-                Projects keep editable layers · Images: JPG, PNG, WebP, GIF, or BMP
-              </span>
-              <span className="tool-divider" />
+              <span className="panel-heading">Export settings</span>
               <label>
                 Export
                 <select
@@ -1049,22 +1118,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   <output>{exportQuality}</output>
                 </>
               ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  void saveCurrentExport().then(
-                    () => setExportError(undefined),
-                    (error: unknown) =>
-                      setExportError(
-                        error instanceof Error
-                          ? error.message
-                          : "The image could not be exported.",
-                      ),
-                  );
-                }}
-              >
-                Export
-              </button>
               <span className="tool-hint">
                 PNG stays sharp and can be transparent. JPG is opaque. Lower
                 quality makes JPG and WebP smaller.
@@ -1129,29 +1182,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               </button>
               <span className="tool-hint">
                 Add saved screens and order them from top to bottom. Export uses
-                the format and quality selected under File.
+                the format and quality selected under Export.
               </span>
               {stitchError ? <p className="import-error">{stitchError}</p> : null}
-            </div>
-          ) : null}
-
-          {activeMenu === "Edit" ? (
-            <div className="control-group">
-              <button
-                type="button"
-                onClick={() => setProject(undo)}
-                disabled={project.past.length === 0}
-              >
-                Undo
-              </button>
-              <button
-                type="button"
-                onClick={() => setProject(redo)}
-                disabled={project.future.length === 0}
-              >
-                Redo
-              </button>
-              <span className="tool-hint">Ctrl/Cmd+Z · Shift+Ctrl/Cmd+Z</span>
             </div>
           ) : null}
 
@@ -1251,16 +1284,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
           {activeMenu === "Text" ? (
             <>
-              <div className="control-group">
-                <button
-                  type="button"
-                  aria-pressed={placingText}
-                  className={placingText ? "active-control" : ""}
-                  onClick={() => setPlacingText((current) => !current)}
-                >
-                  Add text box
-                </button>
-              </div>
               {selectedTextLayer ? (
                 <div className="composer">
                   <TextControls
@@ -1287,36 +1310,28 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 <span className="tool-hint">
                   {placingText
                     ? "Click the canvas to place the text box."
-                    : "Add a text box, then edit it here."}
+                    : "Select a text box to edit its style."}
                 </span>
               )}
             </>
           ) : null}
 
-          {activeMenu === "View" ? (
-            <div className="control-group">
-              <button type="button" onClick={() => changeZoom(project.zoom / 1.25)}>
-                Zoom out
-              </button>
-              <span className="zoom-value">{Math.round(project.zoom * 100)}%</span>
-              <button type="button" onClick={() => changeZoom(project.zoom * 1.25)}>
-                Zoom in
-              </button>
-            </div>
-          ) : null}
-
-          {importError ? <p className="import-error">{importError}</p> : null}
-          {projectFileError ? (
-            <p className="import-error">{projectFileError}</p>
-          ) : null}
-          {exportError ? <p className="import-error">{exportError}</p> : null}
-        </div>
-      </header>
+          </div>
+        </aside>
+      ) : null}
 
       <div
         className={`viewport${placingText ? " placing-text" : ""}`}
+        ref={viewportRef}
         onPointerDown={onViewportPointerDown}
       >
+        <div
+          className="canvas-anchor"
+          style={{
+            width: project.canvasWidth * project.zoom,
+            height: project.canvasHeight * project.zoom,
+          }}
+        >
         <div
           className="canvas"
           ref={canvasRef}
@@ -1437,6 +1452,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           <span className="canvas-size">
             {project.canvasWidth}×{project.canvasHeight}
           </span>
+        </div>
         </div>
       </div>
       {layersPanelOpen ? (
