@@ -710,24 +710,93 @@ test("undo and redo restore text, style, and position", () => {
   });
 });
 
-test("undo and redo restore text color runs", () => {
+test("committing edited rich text creates one undo entry", () => {
   const added = addTextLayer(openProject(), "text-1");
-  const purple = editTextLayer(added, "text-1", {
-    colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
-  });
-  const red = editTextLayer(purple, "text-1", {
-    colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
+  const edit = beginUndoableEdit(added);
+
+  const committed = edit.finish({
+    type: "edit-text-content",
+    layerId: "text-1",
+    content: {
+      text: "John Smith waves.",
+      colorRuns: [{ start: 0, end: 17, color: "#c2a3da" }],
+    },
   });
 
-  expect(red.layers[0]).toMatchObject({
+  expect(committed.past).toHaveLength(added.past.length + 1);
+  expect(committed.layers[0]).toMatchObject({
+    text: "John Smith waves.",
+    colorRuns: [{ start: 0, end: 17, color: "#c2a3da" }],
+  });
+  expect(undo(committed).layers[0]).toMatchObject({
+    text: "Text",
+    colorRuns: [],
+  });
+  expect(redo(undo(committed)).layers[0]).toMatchObject({
+    text: "John Smith waves.",
+    colorRuns: [{ start: 0, end: 17, color: "#c2a3da" }],
+  });
+});
+
+test("committing a selection color creates one undo entry", () => {
+  const added = addTextLayer(openProject(), "text-1");
+  const edit = beginUndoableEdit(added);
+
+  edit.preview({
+    type: "edit-text-content",
+    layerId: "text-1",
+    content: {
+      text: "Text",
+      colorRuns: [{ start: 0, end: 4, color: "#00ff00" }],
+    },
+  });
+  edit.preview({
+    type: "edit-text-content",
+    layerId: "text-1",
+    content: {
+      text: "Text",
+      colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
+    },
+  });
+  const committed = edit.finish();
+
+  expect(committed.past).toHaveLength(added.past.length + 1);
+  expect(committed.layers[0]).toMatchObject({
+    text: "Text",
     colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
   });
-  expect(undo(red).layers[0]).toMatchObject({
+  expect(undo(committed).layers[0]).toMatchObject({
+    text: "Text",
+    colorRuns: [],
+  });
+});
+
+test("cancelling or leaving rich text unchanged creates no undo entry", () => {
+  const added = addTextLayer(openProject(), "text-1");
+  const colored = editTextLayer(added, "text-1", {
     colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
   });
-  expect(redo(undo(red)).layers[0]).toMatchObject({
-    colorRuns: [{ start: 0, end: 4, color: "#ff0000" }],
+  const cancelledEdit = beginUndoableEdit(colored);
+  cancelledEdit.preview({
+    type: "edit-text-content",
+    layerId: "text-1",
+    content: { text: "Changed", colorRuns: [] },
   });
+
+  const cancelled = cancelledEdit.cancel();
+  const unchanged = beginUndoableEdit(colored).finish({
+    type: "edit-text-content",
+    layerId: "text-1",
+    content: {
+      text: "Text",
+      colorRuns: [{ start: 0, end: 4, color: "#c2a3da" }],
+    },
+  });
+
+  expect(cancelled).toBe(colored);
+  expect(unchanged).toBe(colored);
+  expect(cancelled.past).toHaveLength(colored.past.length);
+  expect(unchanged.past).toHaveLength(colored.past.length);
 });
 
 test("scaling changes the image size without changing the canvas size", () => {
