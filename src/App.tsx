@@ -11,6 +11,7 @@ import {
   useControlEditLifetime,
   type ControlEdit,
 } from "./control-edit";
+import { imageLayerStyles } from "./dom-presentation";
 import {
   addImageLayer,
   addTextLayer,
@@ -34,7 +35,6 @@ import {
   TEXT_COLOR_PRESETS,
   undo,
   type ImageLayer,
-  type Layer,
   type Project,
   type TextContent,
   type TextLayer,
@@ -52,6 +52,7 @@ import {
   type ExportOptions,
 } from "./export";
 import { LayersPanel } from "./LayersPanel";
+import { presentProject } from "./presentation";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -714,7 +715,12 @@ export function App() {
 
   function onLayerPointerDown(
     event: PointerEvent<HTMLDivElement>,
-    layer: Layer,
+    layer: {
+      id: string;
+      kind: "image" | "text";
+      x: number;
+      y: number;
+    },
   ) {
     event.stopPropagation();
     if (placingText) {
@@ -1162,35 +1168,35 @@ export function App() {
             transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
           }}
         >
-          {project.layers.map((layer) =>
-            layer.kind === "image" ? (
-              <div
-                className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
-                key={layer.id}
-                style={{
-                  left: layer.x,
-                  top: layer.y,
-                  width: layer.crop.width * layer.scale,
-                  height: layer.crop.height * layer.scale,
-                  display: layer.visible ? undefined : "none",
-                  opacity: layer.opacity,
-                }}
-                title={layer.name}
-                onPointerDown={(event) => onLayerPointerDown(event, layer)}
-              >
-                <img
-                  src={layer.source}
-                  alt=""
-                  draggable={false}
-                  style={{
-                    width: layer.naturalWidth * layer.scale,
-                    height: layer.naturalHeight * layer.scale,
-                    left: -layer.crop.x * layer.scale,
-                    top: -layer.crop.y * layer.scale,
-                  }}
-                />
-              </div>
-            ) : (
+          {presentProject(project).map((layer) => {
+            if (layer.kind === "image") {
+              const styles = imageLayerStyles(layer);
+              return (
+                <div
+                  className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                  key={layer.id}
+                  style={styles.frame}
+                  title={layer.name}
+                  onPointerDown={(event) =>
+                    onLayerPointerDown(event, {
+                      id: layer.id,
+                      kind: layer.kind,
+                      x: layer.frame.x,
+                      y: layer.frame.y,
+                    })
+                  }
+                >
+                  <img
+                    src={layer.source}
+                    alt=""
+                    draggable={false}
+                    style={styles.content}
+                  />
+                </div>
+              );
+            }
+
+            return (
               <div
                 className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
                 key={layer.id}
@@ -1224,7 +1230,6 @@ export function App() {
                   fontWeight: layer.bold ? 700 : 400,
                   lineHeight: layer.lineSpacing,
                   WebkitTextStroke: `${layer.outlineWidth}px ${layer.outlineColor}`,
-                  display: layer.visible ? undefined : "none",
                   opacity: layer.opacity,
                 }}
                 title={layer.name}
@@ -1257,8 +1262,8 @@ export function App() {
                   <ColoredText text={layer.text} colorRuns={layer.colorRuns} />
                 )}
               </div>
-            ),
-          )}
+            );
+          })}
           <span className="canvas-size">
             {project.canvasWidth}×{project.canvasHeight}
           </span>
