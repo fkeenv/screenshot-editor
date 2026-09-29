@@ -94,11 +94,12 @@ function registerFileDialogs() {
 
 function createWindow() {
   const window = new BrowserWindow({
+    show: false,
     width: 1440,
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: "#18181b",
+    backgroundColor: "#e9edf6",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -106,6 +107,8 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  window.once("ready-to-show", () => window.show());
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
