@@ -29,6 +29,7 @@ type LayersPanelProps = {
   layers: Layer[];
   selectedLayerId?: string;
   actions: LayerActions;
+  inert?: boolean;
 };
 
 type LayerRowProps = Omit<LayersPanelProps, "layers"> & {
@@ -197,6 +198,7 @@ export function LayersPanel({
   layers,
   selectedLayerId,
   actions,
+  inert,
 }: LayersPanelProps) {
   const [draggedLayerId, setDraggedLayerId] = useState<string>();
   const [dropSlot, setDropSlot] = useState<number>();
@@ -263,6 +265,7 @@ export function LayersPanel({
       id="layers-panel"
       component="aside"
       aria-label="Layers"
+      inert={inert}
       w={{ base: 220, sm: 280 }}
       miw={{ base: 220, sm: 280 }}
       style={{

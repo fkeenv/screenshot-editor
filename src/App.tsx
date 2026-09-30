@@ -65,6 +65,7 @@ import {
 } from "./LayersPanel";
 import { presentProject } from "./presentation";
 import { PresentedText } from "./PresentedText";
+import { ImageCrop } from "./ImageCrop";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -431,6 +432,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
+  const [imageCrop, setImageCrop] = useState<{
+    layer: ImageLayer;
+    crop: ImageLayer["crop"];
+  }>();
   const textEditor = useRef<TextEditorHandle | null>(null);
   const chatDraftRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -666,6 +671,19 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     chatDraftRef.current?.focus();
   }
 
+  function startImageCrop() {
+    if (!selectedImageLayer) return;
+    resetTextEditing();
+    setPlacingText(false);
+    setImageCrop({ layer: selectedImageLayer, crop: { ...selectedImageLayer.crop } });
+  }
+
+  function applyImageCrop() {
+    if (!imageCrop) return;
+    setProject((current) => cropImageLayer(current, imageCrop.layer.id, imageCrop.crop));
+    setImageCrop(undefined);
+  }
+
   function placeTextBox(event: { clientX: number; clientY: number }) {
     if (!hasDraftText) return;
     const canvas = canvasRef.current;
@@ -789,7 +807,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (placingText) return;
+    if (placingText || imageCrop) return;
     const viewport = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -843,6 +861,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     },
   ) {
     event.stopPropagation();
+    if (imageCrop) return;
     if (placingText) {
       placeTextBox(event);
       return;
@@ -907,6 +926,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (imageCrop) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setImageCrop(undefined);
+        }
+        return;
+      }
       if (event.key === "Escape" && placingText) {
         event.preventDefault();
         cancelTextPlacement();
@@ -958,7 +984,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedLayerId, placingText]);
+  }, [selectedLayerId, placingText, imageCrop]);
 
   const layerActions: LayerActions = {
     select: (layerId) => {
@@ -981,7 +1007,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
   return (
     <div className="app">
-      <header className="editor-chrome">
+      <header className="editor-chrome" inert={imageCrop ? true : undefined}>
         <div className="menu-row">
           <span className="app-title">Screenshot editor</span>
           <div className="project-actions">
@@ -1040,6 +1066,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               }}
             >
               Add text
+            </button>
+            <button type="button" disabled={!selectedImageLayer} onClick={startImageCrop}>
+              Crop image
             </button>
           </div>
           <div className="toolbar-group">
@@ -1109,7 +1138,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       </header>
 
       {toolsPanelOpen ? (
-        <aside className="tool-panel" id="tools-panel" ref={toolPanelRef} aria-label="Inspector">
+        <aside className="tool-panel" id="tools-panel" ref={toolPanelRef} aria-label="Inspector" inert={imageCrop ? true : undefined}>
           <nav className="menu-tabs" role="tablist" aria-label="Inspector views">
             {TOOL_MENUS.map((menu) => (
               <button
@@ -1435,6 +1464,16 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         ref={viewportRef}
         onPointerDown={onViewportPointerDown}
       >
+        {imageCrop ? (
+          <div className="image-crop-toolbar" role="toolbar" aria-label="Crop actions" onPointerDown={(event) => event.stopPropagation()}>
+            <div>
+              <strong>Crop image</strong>
+              <span role="status">{imageCrop.crop.width} × {imageCrop.crop.height} px</span>
+            </div>
+            <button type="button" onClick={() => setImageCrop(undefined)}>Cancel</button>
+            <button type="button" className="primary-action" autoFocus onClick={applyImageCrop}>Apply</button>
+          </div>
+        ) : null}
         {!welcomeDismissed && project.layers.length === 0 ? (
           <section
             className="welcome-screen"
@@ -1467,7 +1506,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           }}
         >
         <div
-          className="canvas"
+          className={`canvas${imageCrop ? " cropping-image" : ""}`}
           ref={canvasRef}
           onPointerDown={(event) => {
             if (!placingText) return;
@@ -1581,8 +1620,16 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   <PresentedText text={layer} />
                 )}
               </div>
-            );
-          })}
+              );
+            })}
+          {imageCrop ? (
+            <ImageCrop
+              layer={imageCrop.layer}
+              crop={imageCrop.crop}
+              zoom={project.zoom}
+              onChange={(crop) => setImageCrop((current) => current ? { ...current, crop } : current)}
+            />
+          ) : null}
           <span className="canvas-size">
             {project.canvasWidth}×{project.canvasHeight}
           </span>
@@ -1594,6 +1641,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           layers={project.layers}
           selectedLayerId={selectedLayerId}
           actions={layerActions}
+          inert={imageCrop ? true : undefined}
         />
       ) : null}
     </div>
