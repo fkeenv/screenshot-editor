@@ -567,6 +567,72 @@ button.active-control {
   touch-action: none;
 }
 
+.welcome-screen {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 18px;
+  background: color-mix(in srgb, var(--app-bg) 82%, transparent);
+}
+
+.welcome-card {
+  width: 100%;
+  max-width: 420px;
+  padding: clamp(20px, 4vw, 32px);
+  color: var(--text);
+  background: var(--chrome-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 55px rgb(16 23 43 / 14%);
+}
+
+.welcome-eyebrow {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.welcome-card h1 {
+  margin: 8px 0 6px;
+  color: var(--text-strong);
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.welcome-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.welcome-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.welcome-actions button {
+  min-height: 38px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.welcome-actions .welcome-primary {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.welcome-actions .welcome-primary:hover {
+  filter: brightness(1.08);
+}
+
 .canvas-anchor {
   position: absolute;
   top: 50%;
