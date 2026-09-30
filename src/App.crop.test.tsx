@@ -135,14 +135,18 @@ async function savedProject() {
   return openSavedProject(new TextDecoder().decode(saved.bytes));
 }
 
-test("crop is unavailable without an image selection and can be entered from the toolbar", async () => {
-  await mount();
-  expect(button("Crop image").disabled).toBe(true);
+async function openImageAndStartCrop() {
   await click("Open project");
   const image = container.querySelector(".image-layer")!;
   await pointer(image, "pointerdown", 100, 100);
   await pointer(image, "pointerup", 100, 100);
   await click("Crop image");
+}
+
+test("crop is unavailable without an image selection and can be entered from the toolbar", async () => {
+  await mount();
+  expect(button("Crop image").disabled).toBe(true);
+  await openImageAndStartCrop();
   expect(container.querySelector('[aria-label="Image crop"]')).not.toBeNull();
   expect(button("Apply")).toBeDefined();
   expect(button("Cancel")).toBeDefined();
@@ -150,11 +154,7 @@ test("crop is unavailable without an image selection and can be entered from the
 
 test("dragging previews a source-pixel crop, Apply commits once, and undo/redo preserve the image frame", async () => {
   await mount();
-  await click("Open project");
-  const image = container.querySelector(".image-layer")!;
-  await pointer(image, "pointerdown", 100, 100);
-  await pointer(image, "pointerup", 100, 100);
-  await click("Crop image");
+  await openImageAndStartCrop();
   const handle = button("Crop top left");
   await pointer(handle, "pointerdown", 100, 100);
   await pointer(handle, "pointermove", 132, 124);
@@ -188,11 +188,7 @@ test.each(["Cancel", "Escape"])(
   "%s discards a dragged crop without changing the project or redo history",
   async (action) => {
     await mount();
-    await click("Open project");
-    const image = container.querySelector(".image-layer")!;
-    await pointer(image, "pointerdown", 100, 100);
-    await pointer(image, "pointerup", 100, 100);
-    await click("Crop image");
+    await openImageAndStartCrop();
     const first = button("Crop right");
     await pointer(first, "pointerdown", 200, 100);
     await pointer(first, "pointerup", 180, 100);
@@ -225,11 +221,7 @@ test.each(["Cancel", "Escape"])(
 
 test("pointer cancellation restores the crop draft and other editor actions pause until crop mode ends", async () => {
   await mount();
-  await click("Open project");
-  const image = container.querySelector(".image-layer")!;
-  await pointer(image, "pointerdown", 100, 100);
-  await pointer(image, "pointerup", 100, 100);
-  await click("Crop image");
+  await openImageAndStartCrop();
   expect(container.querySelector("header")?.hasAttribute("inert")).toBe(true);
   expect(
     container.querySelector('[aria-label="Inspector"]')?.hasAttribute("inert"),
@@ -252,4 +244,29 @@ test("pointer cancellation restores the crop draft and other editor actions paus
   await click("Apply");
   expect((await savedProject()).layers[0]).toEqual(imageProject().layers[0]);
   expect(button("Undo").disabled).toBe(true);
+});
+
+test("a one-pixel crop keeps its handle controls separated and can expand again before Apply", async () => {
+  await mount();
+  await openImageAndStartCrop();
+  const corner = button("Crop bottom right");
+  await pointer(corner, "pointerdown", 200, 150);
+  await pointer(corner, "pointerup", -1000, -1000);
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "1 × 1 px",
+  );
+  const controls = container.querySelector(
+    ".image-crop-handles",
+  ) as HTMLElement;
+  expect(controls.style.width).toBe("96px");
+  expect(controls.style.height).toBe("96px");
+  await pointer(corner, "pointerdown", 100, 100);
+  await pointer(corner, "pointerup", 150, 125);
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    "51 × 26 px",
+  );
+  await click("Apply");
+  expect((await savedProject()).layers[0]).toMatchObject({
+    crop: { x: 20, y: 10, width: 51, height: 26 },
+  });
 });

@@ -56,6 +56,13 @@ export function ImageCrop({ layer, crop, zoom, onChange }: ImageCropProps) {
     if (start) onChange(start.crop);
   }
 
+  const selection = {
+    left: (crop.x - layer.crop.x) * layer.scale,
+    top: (crop.y - layer.crop.y) * layer.scale,
+    width: crop.width * layer.scale,
+    height: crop.height * layer.scale,
+  };
+
   return (
     <div
       className="image-crop-overlay"
@@ -72,25 +79,28 @@ export function ImageCrop({ layer, crop, zoom, onChange }: ImageCropProps) {
       }
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <img
-        src={layer.source}
-        alt=""
-        draggable={false}
-        style={{
-          left: -layer.crop.x * layer.scale,
-          top: -layer.crop.y * layer.scale,
-          width: layer.naturalWidth * layer.scale,
-          height: layer.naturalHeight * layer.scale,
-          opacity: layer.opacity,
-        }}
-      />
+      <div className="image-crop-preview">
+        <img
+          src={layer.source}
+          alt=""
+          draggable={false}
+          style={{
+            left: -layer.crop.x * layer.scale,
+            top: -layer.crop.y * layer.scale,
+            width: layer.naturalWidth * layer.scale,
+            height: layer.naturalHeight * layer.scale,
+            opacity: layer.opacity,
+          }}
+        />
+        <div className="image-crop-selection" style={selection} />
+      </div>
       <div
-        className="image-crop-selection"
+        className="image-crop-handles"
         style={{
-          left: (crop.x - layer.crop.x) * layer.scale,
-          top: (crop.y - layer.crop.y) * layer.scale,
-          width: crop.width * layer.scale,
-          height: crop.height * layer.scale,
+          left: selection.left + selection.width / 2,
+          top: selection.top + selection.height / 2,
+          width: Math.max(selection.width, 48 / zoom),
+          height: Math.max(selection.height, 48 / zoom),
         }}
       >
         {HANDLES.map(([handle, label]) => (

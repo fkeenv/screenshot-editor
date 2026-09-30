@@ -749,8 +749,19 @@ button.active-control {
 .image-crop-overlay {
   position: absolute;
   z-index: 10;
-  overflow: hidden;
   touch-action: none;
+}
+
+.image-crop-preview {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.image-crop-handles {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 
 .image-crop-overlay img {
@@ -799,6 +810,7 @@ button.active-control {
   background: transparent;
   transform: translate(-50%, -50%);
   touch-action: none;
+  pointer-events: auto;
 }
 
 .image-crop-handle::after {
