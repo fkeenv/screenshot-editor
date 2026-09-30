@@ -744,6 +744,15 @@ export function reorderLayer(
   return commit(project, { ...snapshot(project), layers });
 }
 
+export function deleteLayer(project: Project, layerId: string): Project {
+  const index = project.layers.findIndex((layer) => layer.id === layerId);
+  if (index < 0) return project;
+
+  const layers = [...project.layers];
+  layers.splice(index, 1);
+  return commit(project, { ...snapshot(project), layers });
+}
+
 export function setLayerVisibility(
   project: Project,
   layerId: string,

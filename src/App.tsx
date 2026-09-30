@@ -20,6 +20,7 @@ import {
   addTextLayer,
   beginUndoableEdit,
   cropImageLayer,
+  deleteLayer,
   editTextLayer,
   fitImageLayerToCanvas,
   nudgeLayer,
@@ -432,6 +433,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
+  const layerInteractions = useRef(new Map<string, Set<() => void>>());
   const [imageCrop, setImageCrop] = useState<{
     layer: ImageLayer;
     crop: ImageLayer["crop"];
@@ -460,6 +462,38 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         ),
       }
     : project;
+
+  function trackLayerInteraction(layerId: string, cancel: () => void) {
+    const interactions = layerInteractions.current;
+    const active = interactions.get(layerId) ?? new Set<() => void>();
+    active.add(cancel);
+    interactions.set(layerId, active);
+
+    return () => {
+      active.delete(cancel);
+      if (active.size === 0) interactions.delete(layerId);
+    };
+  }
+
+  function cancelLayerInteractions(layerId: string) {
+    for (const cancel of [...(layerInteractions.current.get(layerId) ?? [])]) {
+      cancel();
+    }
+  }
+
+  function deleteSelectedLayer(layerId = selectedLayerId) {
+    if (!layerId) return;
+    const layerIndex = project.layers.findIndex((layer) => layer.id === layerId);
+    if (layerIndex < 0) return;
+    const nextLayer = project.layers[layerIndex - 1] ?? project.layers[layerIndex + 1];
+    cancelLayerInteractions(layerId);
+    if (editingTextLayerId === layerId) {
+      textColorEdit.pointerCancel();
+      resetTextEditing();
+    }
+    setProject((current) => deleteLayer(current, layerId));
+    setSelectedLayerId(nextLayer?.id);
+  }
 
   function beginControlEdit<Value>(
     update: (value: Value) => UndoableEditUpdate | undefined,
@@ -748,9 +782,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     function onUp(up: globalThis.PointerEvent) {
-      handle.removeEventListener("pointermove", onMove);
-      handle.removeEventListener("pointerup", onUp);
-      handle.removeEventListener("pointercancel", onUp);
+      removeListeners();
+      unregister();
       if (up.type === "pointercancel") {
         setProject(gesture.cancel());
         return;
@@ -769,6 +802,20 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     handle.addEventListener("pointermove", onMove);
     handle.addEventListener("pointerup", onUp);
     handle.addEventListener("pointercancel", onUp);
+    function removeListeners() {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      if (handle.hasPointerCapture(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId);
+      }
+    }
+    let unregister: () => void = () => {};
+    unregister = trackLayerInteraction(layer.id, () => {
+      removeListeners();
+      unregister();
+      setProject(gesture.cancel());
+    });
   }
 
   function beginTextEditing(layerId: string) {
@@ -828,9 +875,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     function onUp(up: globalThis.PointerEvent) {
-      viewport.removeEventListener("pointermove", onMove);
-      viewport.removeEventListener("pointerup", onUp);
-      viewport.removeEventListener("pointercancel", onUp);
+      removeListeners();
       if (up.type === "pointercancel") {
         setProject(gesture.cancel());
         return;
@@ -849,6 +894,14 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     viewport.addEventListener("pointermove", onMove);
     viewport.addEventListener("pointerup", onUp);
     viewport.addEventListener("pointercancel", onUp);
+    function removeListeners() {
+      viewport.removeEventListener("pointermove", onMove);
+      viewport.removeEventListener("pointerup", onUp);
+      viewport.removeEventListener("pointercancel", onUp);
+      if (viewport.hasPointerCapture(event.pointerId)) {
+        viewport.releasePointerCapture(event.pointerId);
+      }
+    }
   }
 
   function onLayerPointerDown(
@@ -893,9 +946,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     function onUp(up: globalThis.PointerEvent) {
-      element.removeEventListener("pointermove", onMove);
-      element.removeEventListener("pointerup", onUp);
-      element.removeEventListener("pointercancel", onUp);
+      removeListeners();
+      unregister();
       if (up.type === "pointercancel") {
         setProject(gesture.cancel());
         return;
@@ -913,6 +965,20 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     element.addEventListener("pointermove", onMove);
     element.addEventListener("pointerup", onUp);
     element.addEventListener("pointercancel", onUp);
+    function removeListeners() {
+      element.removeEventListener("pointermove", onMove);
+      element.removeEventListener("pointerup", onUp);
+      element.removeEventListener("pointercancel", onUp);
+      if (element.hasPointerCapture(event.pointerId)) {
+        element.releasePointerCapture(event.pointerId);
+      }
+    }
+    let unregister: () => void = () => {};
+    unregister = trackLayerInteraction(layer.id, () => {
+      removeListeners();
+      unregister();
+      setProject(gesture.cancel());
+    });
   }
 
   useEffect(() => {
@@ -940,8 +1006,22 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       }
       if (
         event.target instanceof HTMLElement &&
-        event.target.matches("input, textarea, select, button, [contenteditable='true']")
+        (event.target.matches(
+          "input, textarea, select, button:not(.layer-select), [contenteditable='true']",
+        ) ||
+          event.target.closest("#tools-panel") ||
+          (event.target.closest("#layers-panel") &&
+            !event.target.matches(".layer-select")))
       ) {
+        return;
+      }
+
+      if (
+        selectedLayerId &&
+        (event.key === "Delete" || event.key === "Backspace")
+      ) {
+        event.preventDefault();
+        deleteSelectedLayer();
         return;
       }
 
@@ -1069,6 +1149,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             </button>
             <button type="button" disabled={!selectedImageLayer} onClick={startImageCrop}>
               Crop image
+            </button>
+            <button
+              type="button"
+              disabled={!selectedLayer}
+              onClick={() => deleteSelectedLayer()}
+            >
+              Delete layer
             </button>
           </div>
           <div className="toolbar-group">
