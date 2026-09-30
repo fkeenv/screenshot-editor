@@ -7,9 +7,12 @@ import { App } from "./App";
 import {
   addImageLayer,
   addTextLayer,
+  cropImageLayer,
+  moveLayer,
   openProject,
   openSavedProject,
   saveProject,
+  scaleImageLayer,
   setView,
   type Project,
 } from "./editor";
@@ -44,6 +47,26 @@ function stackedProject() {
     width: 40,
     height: 20,
   });
+}
+
+function resizableProject(zoom = 0.5) {
+  let project = addImageLayer(openProject(), {
+    id: "resizing",
+    name: "Screenshot",
+    source: "data:image/png;base64,image",
+    format: "image/png",
+    width: 320,
+    height: 180,
+  });
+  project = cropImageLayer(project, "resizing", {
+    x: 20,
+    y: 10,
+    width: 240,
+    height: 120,
+  });
+  project = scaleImageLayer(project, "resizing", 2);
+  project = moveLayer(project, "resizing", 40, 30);
+  return setView(project, zoom, 18, -12);
 }
 
 beforeEach(() => {
@@ -160,16 +183,185 @@ async function keyDown(key: string, target: HTMLElement = document.body) {
   );
 }
 
-async function pointer(target: Element, type: string, x: number) {
+async function pointer(target: Element, type: string, x: number, y = 0) {
   const event = new MouseEvent(type, {
     bubbles: true,
     clientX: x,
-    clientY: 0,
+    clientY: y,
     buttons: type === "pointerup" ? 0 : 1,
   });
   Object.defineProperty(event, "pointerId", { value: 1 });
   await act(async () => target.dispatchEvent(event));
 }
+
+function positionInput(axis: "X" | "Y") {
+  const input = container.querySelector<HTMLInputElement>(
+    `[aria-label='Image ${axis}']`,
+  );
+  if (!input) throw new Error(`Missing ${axis} position input`);
+  return input;
+}
+
+async function typePosition(axis: "X" | "Y", value: string) {
+  const input = positionInput(axis);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+test("numeric image positions commit on Enter or blur rather than every keystroke", async () => {
+  await mount(resizableProject());
+  await selectLayer("Screenshot");
+  expect(positionInput("X").value).toBe("40");
+  expect(positionInput("Y").value).toBe("30");
+  await typePosition("X", "1");
+  await typePosition("X", "12");
+  await typePosition("X", "125.5");
+  expect(button("Undo").disabled).toBe(true);
+  expect(container.querySelector<HTMLElement>(".image-layer")!.style.left).toBe(
+    "40px",
+  );
+  await keyDown("Enter", positionInput("X"));
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({
+    x: 125.5,
+    y: 30,
+    scale: 2,
+  });
+  await click("Undo");
+  expect(positionInput("X").value).toBe("40");
+  expect(button("Undo").disabled).toBe(true);
+  await click("Redo");
+  expect(positionInput("X").value).toBe("125.5");
+
+  await act(async () => positionInput("Y").focus());
+  await typePosition("Y", "-12.25");
+  await act(async () => positionInput("Y").blur());
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({
+    x: 125.5,
+    y: -12.25,
+  });
+  await click("Undo");
+  expect(positionInput("Y").value).toBe("30");
+  await click("Undo");
+  expect(positionInput("X").value).toBe("40");
+  expect(button("Undo").disabled).toBe(true);
+});
+
+test("invalid or cancelled numeric positions leave the image and its history unchanged", async () => {
+  await mount(resizableProject());
+  await selectLayer("Screenshot");
+  for (const invalid of ["", "1e999"]) {
+    await typePosition("X", invalid);
+    await keyDown("Enter", positionInput("X"));
+    expect(positionInput("X").value).toBe("40");
+  }
+  await typePosition("Y", "-150");
+  await keyDown("Escape", positionInput("Y"));
+  expect(positionInput("Y").value).toBe("30");
+  await keyDown("Backspace", positionInput("Y"));
+  expect((await openSavedProjectFromEditor()).layers).toEqual(
+    resizableProject().layers,
+  );
+  expect(button("Undo").disabled).toBe(true);
+});
+
+test("selecting an image reveals four handles and a corner resize previews and commits as one edit", async () => {
+  await mount(resizableProject());
+  expect(container.querySelectorAll(".image-resize-handle")).toHaveLength(0);
+  await selectLayer("Screenshot");
+  expect(container.querySelectorAll(".image-resize-handle")).toHaveLength(4);
+  const handle = button("Resize image top left");
+  await pointer(handle, "pointerdown", 100, 100);
+  await pointer(handle, "pointermove", 40, 70);
+  const image = container.querySelector<HTMLElement>(".image-layer")!;
+  expect(image.style.left).toBe("-80px");
+  expect(image.style.top).toBe("-30px");
+  expect(image.style.width).toBe("600px");
+  expect(button("Undo").disabled).toBe(true);
+  await pointer(handle, "pointerup", -20, 40);
+
+  const resized = await openSavedProjectFromEditor();
+  expect(resized.layers[0]).toMatchObject({ x: -200, y: -90, scale: 3 });
+  expect(resized.panX).toBe(18);
+  expect(resized.panY).toBe(-12);
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(
+    resizableProject().layers,
+  );
+  expect(button("Undo").disabled).toBe(true);
+  await click("Redo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(resized.layers);
+});
+
+test.each([0.25, 2])(
+  "image resizing uses pointer deltas at zoom %s without changing pan",
+  async (zoom) => {
+    await mount(resizableProject(zoom));
+    await selectLayer("Screenshot");
+    const handle = button("Resize image bottom right");
+    await pointer(handle, "pointerdown", 300, 200);
+    await pointer(handle, "pointerup", 300 + 240 * zoom, 200 + 120 * zoom);
+    expect(await openSavedProjectFromEditor()).toMatchObject({
+      panX: 18,
+      panY: -12,
+      zoom,
+      layers: [expect.objectContaining({ x: 40, y: 30, scale: 3 })],
+    });
+  },
+);
+
+test.each(["Escape", "pointercancel", "lostpointercapture"])(
+  "%s cancels an image resize and ignores a late release",
+  async (cancel) => {
+    const project = resizableProject();
+    await mount(project);
+    await selectLayer("Screenshot");
+    const handle = button("Resize image bottom right");
+    await pointer(handle, "pointerdown", 100, 100);
+    await pointer(handle, "pointermove", 220, 160);
+    expect(
+      container.querySelector<HTMLElement>(".image-layer")!.style.width,
+    ).toBe("720px");
+    if (cancel === "Escape") await keyDown("Escape", handle);
+    else await pointer(handle, cancel, 220, 160);
+    await pointer(handle, "pointerup", 340, 220);
+    expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+    expect(button("Undo").disabled).toBe(true);
+  },
+);
+
+test("resized images still support drag, arrow nudge, scale presets, and Fit", async () => {
+  await mount(resizableProject());
+  await selectLayer("Screenshot");
+  const handle = button("Resize image bottom right");
+  await pointer(handle, "pointerdown", 0, 0);
+  await pointer(handle, "pointerup", 120, 60);
+  const image = container.querySelector(".image-layer")!;
+  await pointer(image, "pointerdown", 0, 0);
+  await pointer(image, "pointerup", 10, 5);
+  await keyDown("ArrowRight");
+  expect(positionInput("X").value).toBe("61");
+  expect(positionInput("Y").value).toBe("40");
+  await click("100%");
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({
+    x: 61,
+    y: 40,
+    scale: 1,
+  });
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>("[title='Fit image to canvas']")!
+      .click(),
+  );
+  const fitted = (await openSavedProjectFromEditor()).layers[0];
+  expect(fitted).toMatchObject({ x: 61, y: 40 });
+  if (fitted?.kind !== "image") throw new Error("Expected an image");
+  expect(fitted.scale).toBeCloseTo(800 / 240);
+});
 
 test("the visible duplicate action selects a rendered text copy and supports undo and redo", async () => {
   await mount();

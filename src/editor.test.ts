@@ -22,6 +22,7 @@ import {
   setLayerVisibility,
   setLayerOpacity,
   resizeTextLayer,
+  resizeImageLayer,
   replaceTextRange,
   scaleImageLayer,
   saveProject,
@@ -44,6 +45,106 @@ const TEST_IMAGE = {
 function projectWithImage() {
   return addImageLayer(openProject(), TEST_IMAGE);
 }
+
+test.each([
+  ["nw", -120, -60, -200, -90],
+  ["ne", 120, -60, 40, -90],
+  ["sw", -120, 60, -200, 30],
+  ["se", 120, 60, 40, 30],
+] as const)(
+  "resizing the %s image corner preserves the cropped ratio and anchors its opposite corner",
+  (corner, dx, dy, x, y) => {
+    let project = cropImageLayer(projectWithImage(), "image-1", {
+      x: 20,
+      y: 10,
+      width: 240,
+      height: 120,
+    });
+    project = scaleImageLayer(project, "image-1", 2);
+    project = moveLayer(project, "image-1", 40, 30);
+    project = setView(project, 0.5, 18, -12);
+
+    const resized = resizeImageLayer(project, "image-1", corner, {
+      x: dx,
+      y: dy,
+    });
+
+    expect(resized.layers[0]).toMatchObject({
+      x,
+      y,
+      scale: 3,
+      crop: { x: 20, y: 10, width: 240, height: 120 },
+    });
+    expect(resized.past).toHaveLength(project.past.length + 1);
+    expect(undo(resized).layers).toEqual(project.layers);
+    expect(redo(undo(resized)).layers).toEqual(resized.layers);
+    expect(openSavedProject(saveProject(resized)).layers).toEqual(
+      resized.layers,
+    );
+  },
+);
+
+test("resizing past the anchor stays positive and invalid pointer deltas leave the image unchanged", () => {
+  const project = projectWithImage();
+  const resized = resizeImageLayer(project, "image-1", "nw", {
+    x: 640,
+    y: 360,
+  });
+  const layer = resized.layers[0];
+  if (layer?.kind !== "image") throw new Error("Expected an image");
+  expect(layer.scale).toBeCloseTo(1 / 180);
+  expect(layer.x).toBeCloseTo(318.2222222222);
+  expect(layer.y).toBe(179);
+  expect(openSavedProject(saveProject(resized)).layers).toEqual(resized.layers);
+  expect(resizeImageLayer(project, "image-1", "se", { x: NaN, y: 0 })).toBe(
+    project,
+  );
+  expect(
+    resizeImageLayer(project, "image-1", "se", { x: 0, y: Infinity }),
+  ).toBe(project);
+  expect(resizeImageLayer(project, "image-1", "se", { x: 0, y: 0 })).toBe(
+    project,
+  );
+  expect(resizeImageLayer(project, "missing", "se", { x: 40, y: 20 })).toBe(
+    project,
+  );
+});
+
+test("an unmoved resize corner preserves fractional position without adding history", () => {
+  const fractional = moveLayer(
+    scaleImageLayer(projectWithImage(), "image-1", 1.23),
+    "image-1",
+    10.1,
+    20.2,
+  );
+  expect(resizeImageLayer(fractional, "image-1", "nw", { x: 0, y: 0 })).toBe(
+    fractional,
+  );
+});
+
+test("an image resize previews without history and finishes or cancels as one complete edit", () => {
+  const project = projectWithImage();
+  const gesture = beginUndoableEdit(project);
+  const preview = gesture.preview({
+    type: "resize-image",
+    layerId: "image-1",
+    corner: "nw",
+    screenDelta: { x: -160, y: -90 },
+  });
+  expect(preview.layers[0]).toMatchObject({ x: -160, y: -90, scale: 1.5 });
+  expect(preview.past).toEqual(project.past);
+  expect(gesture.cancel()).toBe(project);
+  const finished = gesture.finish({
+    type: "resize-image",
+    layerId: "image-1",
+    corner: "nw",
+    screenDelta: { x: -320, y: -180 },
+  });
+  expect(finished.layers[0]).toMatchObject({ x: -320, y: -180, scale: 2 });
+  expect(finished.past).toHaveLength(project.past.length + 1);
+  expect(undo(finished)).toEqual({ ...project, future: [expect.any(Object)] });
+  expect(redo(undo(finished)).layers).toEqual(finished.layers);
+});
 
 test("duplicating an image preserves its appearance and inserts an offset copy immediately above it", () => {
   let project = cropImageLayer(projectWithImage(), "image-1", {

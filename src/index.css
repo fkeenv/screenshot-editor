@@ -677,13 +677,19 @@ button.active-control {
 
 .canvas {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   background: #111827;
   border: 1px solid #52525b;
   box-shadow: 0 16px 48px rgb(0 0 0 / 22%);
   transform-origin: top left;
   user-select: none;
   pointer-events: auto;
+}
+
+.canvas-content {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
 .canvas-layer {
@@ -838,6 +844,68 @@ button.active-control {
 .image-crop-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
 .image-crop-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
 .image-crop-handle.w { left: 0; top: 50%; cursor: ew-resize; }
+
+.image-position-control {
+  display: grid;
+}
+
+.image-position-control > span {
+  font-size: 12px;
+}
+
+.image-position-control .position-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tool-panel .image-position-control input[type="number"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.image-resize-handles {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.image-resize-handle {
+  position: absolute;
+  width: calc(24px / var(--resize-zoom));
+  height: calc(24px / var(--resize-zoom));
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.image-resize-handle::after {
+  content: "";
+  position: absolute;
+  width: calc(8px / var(--resize-zoom));
+  height: calc(8px / var(--resize-zoom));
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: calc(1px / var(--resize-zoom)) solid var(--accent);
+  background: var(--layer-surface);
+}
+
+.image-resize-handle:hover, .image-resize-handle:focus-visible {
+  background: transparent;
+  outline: calc(2px / var(--resize-zoom)) solid var(--accent);
+}
+
+.image-resize-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
+.image-resize-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.image-resize-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.image-resize-handle.se { left: 100%; top: 100%; cursor: nwse-resize; }
 
 .text-layer {
   color: #fff;
