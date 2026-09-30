@@ -753,6 +753,33 @@ export function deleteLayer(project: Project, layerId: string): Project {
   return commit(project, { ...snapshot(project), layers });
 }
 
+export function duplicateLayer(
+  project: Project,
+  layerId: string,
+  copyId: string,
+): Project {
+  const index = project.layers.findIndex((layer) => layer.id === layerId);
+  const original = project.layers[index];
+  if (
+    !original ||
+    !copyId ||
+    project.layers.some((layer) => layer.id === copyId)
+  ) {
+    return project;
+  }
+
+  const copy: Layer = {
+    ...structuredClone(original),
+    id: copyId,
+    name: nextLayerName(project, `${original.name} copy`),
+    x: original.x + 16,
+    y: original.y + 16,
+  };
+  const layers = [...project.layers];
+  layers.splice(index + 1, 0, copy);
+  return commit(project, { ...snapshot(project), layers });
+}
+
 export function setLayerVisibility(
   project: Project,
   layerId: string,

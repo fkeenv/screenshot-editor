@@ -8,6 +8,7 @@ import {
   contentToDocument,
   deleteLayer,
   documentToContent,
+  duplicateLayer,
   editTextLayer,
   fitImageLayerToCanvas,
   moveLayer,
@@ -43,6 +44,161 @@ const TEST_IMAGE = {
 function projectWithImage() {
   return addImageLayer(openProject(), TEST_IMAGE);
 }
+
+test("duplicating an image preserves its appearance and inserts an offset copy immediately above it", () => {
+  let project = cropImageLayer(projectWithImage(), "image-1", {
+    x: 12,
+    y: 8,
+    width: 240,
+    height: 120,
+  });
+  project = scaleImageLayer(project, "image-1", 1.5);
+  project = moveLayer(project, "image-1", 40, 24);
+  project = setLayerVisibility(project, "image-1", false);
+  project = setLayerOpacity(project, "image-1", 0.45);
+  project = addTextLayer(project, "caption");
+
+  const duplicated = duplicateLayer(project, "image-1", "image-copy");
+
+  expect(duplicated.layers.map((layer) => layer.id)).toEqual([
+    "image-1",
+    "image-copy",
+    "caption",
+  ]);
+  expect(duplicated.layers[1]).toEqual({
+    id: "image-copy",
+    kind: "image",
+    name: "Screenshot copy",
+    visible: false,
+    opacity: 0.45,
+    source: TEST_IMAGE.source,
+    format: "image/png",
+    naturalWidth: 320,
+    naturalHeight: 180,
+    x: 56,
+    y: 40,
+    scale: 1.5,
+    crop: { x: 12, y: 8, width: 240, height: 120 },
+  });
+  expect(duplicated.layers[0]).toEqual(project.layers[0]);
+  expect(duplicated.past).toHaveLength(project.past.length + 1);
+  expect(undo(duplicated).layers).toEqual(project.layers);
+  expect(redo(undo(duplicated)).layers).toEqual(duplicated.layers);
+  expect(openSavedProject(saveProject(duplicated)).layers).toEqual(
+    duplicated.layers,
+  );
+});
+
+test("duplication with a missing source, empty identity, or existing identity is a no-op", () => {
+  const project = projectWithImage();
+  expect(duplicateLayer(project, "missing", "copy")).toBe(project);
+  expect(duplicateLayer(project, "image-1", "image-1")).toBe(project);
+  expect(duplicateLayer(project, "image-1", "")).toBe(project);
+});
+
+test("duplicating styled text preserves its content and keeps later edits independent", () => {
+  let project = addTextLayer(
+    openProject(),
+    "caption",
+    { x: 80, y: 56 },
+    {
+      text: "John says hello.",
+      colorRuns: [{ start: 10, end: 16, color: "#edaa41" }],
+    },
+  );
+  project = editTextLayer(project, "caption", {
+    fontFamily: "Georgia",
+    fontSize: 32,
+    bold: true,
+    outlineWidth: 3,
+    outlineColor: "#112233",
+    lineSpacing: 1.5,
+    wrapWidth: 280,
+  });
+  project = renameLayer(project, "caption", "Chat caption");
+  project = setLayerVisibility(project, "caption", false);
+  project = setLayerOpacity(project, "caption", 0.6);
+
+  const duplicated = duplicateLayer(project, "caption", "caption-copy");
+
+  expect(duplicated.layers[1]).toEqual({
+    id: "caption-copy",
+    kind: "text",
+    name: "Chat caption copy",
+    x: 96,
+    y: 72,
+    visible: false,
+    opacity: 0.6,
+    text: "John says hello.",
+    colorRuns: [{ start: 10, end: 16, color: "#edaa41" }],
+    fontFamily: "Georgia",
+    fontSize: 32,
+    bold: true,
+    outlineWidth: 3,
+    outlineColor: "#112233",
+    lineSpacing: 1.5,
+    wrapWidth: 280,
+  });
+  expect(undo(duplicated).layers).toEqual(project.layers);
+  expect(redo(undo(duplicated)).layers).toEqual(duplicated.layers);
+  expect(openSavedProject(saveProject(duplicated)).layers).toEqual(
+    duplicated.layers,
+  );
+
+  const edited = editTextLayer(duplicated, "caption-copy", {
+    text: "A new caption.",
+    colorRuns: [{ start: 0, end: 13, color: "#ff0000" }],
+    fontSize: 48,
+    wrapWidth: 200,
+  });
+  expect(edited.layers[0]).toEqual(project.layers[0]);
+  expect(edited.layers[1]).toMatchObject({
+    text: "A new caption.",
+    fontSize: 48,
+    wrapWidth: 200,
+  });
+});
+
+test("an image copy can be cropped, scaled, and moved without changing the original", () => {
+  const project = projectWithImage();
+  let duplicated = duplicateLayer(project, "image-1", "copy");
+  duplicated = cropImageLayer(duplicated, "copy", {
+    x: 10,
+    y: 5,
+    width: 100,
+    height: 80,
+  });
+  duplicated = scaleImageLayer(duplicated, "copy", 2);
+  duplicated = moveLayer(duplicated, "copy", 90, 60);
+  duplicated = setLayerVisibility(duplicated, "copy", false);
+  duplicated = setLayerOpacity(duplicated, "copy", 0.3);
+
+  expect(duplicated.layers[0]).toEqual(project.layers[0]);
+  expect(duplicated.layers[1]).toMatchObject({
+    crop: { x: 10, y: 5, width: 100, height: 80 },
+    scale: 2,
+    x: 90,
+    y: 60,
+    visible: false,
+    opacity: 0.3,
+  });
+});
+
+test("repeated copies have distinct names and identities through undo, redo, and a new history branch", () => {
+  const first = duplicateLayer(projectWithImage(), "image-1", "copy-1");
+  const second = duplicateLayer(first, "image-1", "copy-2");
+  expect(second.layers.map((layer) => [layer.id, layer.name])).toEqual([
+    ["image-1", "Screenshot"],
+    ["copy-2", "Screenshot copy (1)"],
+    ["copy-1", "Screenshot copy"],
+  ]);
+  expect(undo(second).layers).toEqual(first.layers);
+  expect(redo(undo(second)).layers).toEqual(second.layers);
+
+  const forked = duplicateLayer(undo(second), "image-1", "copy-2");
+  expect(forked.layers).toEqual(second.layers);
+  expect(redo(forked)).toBe(forked);
+});
 
 test("deleting a layer removes it, saves the remaining stack, and restores it with one undo step", () => {
   const image = projectWithImage();

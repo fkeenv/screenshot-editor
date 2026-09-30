@@ -10,6 +10,7 @@ import {
   openProject,
   openSavedProject,
   saveProject,
+  setView,
   type Project,
 } from "./editor";
 
@@ -158,6 +159,85 @@ async function keyDown(key: string, target: HTMLElement = document.body) {
     ),
   );
 }
+
+test("the visible duplicate action selects a rendered text copy and supports undo and redo", async () => {
+  await mount();
+  expect(button("Duplicate layer").disabled).toBe(true);
+  await selectLayer("Text");
+  await click("Duplicate layer");
+
+  const duplicated = await openSavedProjectFromEditor();
+  expect(duplicated.layers.map((layer) => layer.name)).toEqual([
+    "Bottom.png",
+    "Text",
+    "Text copy",
+    "Top.png",
+  ]);
+  expect(layerButton("Text copy").getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelectorAll(".text-layer")).toHaveLength(2);
+  const copy = container.querySelector<HTMLElement>(
+    ".text-layer[title='Text copy']",
+  )!;
+  expect(copy.classList.contains("selected")).toBe(true);
+  expect(copy.style.left).toBe("28px");
+  expect(copy.style.top).toBe("34px");
+  expect(copy.textContent).toContain("A caption");
+
+  await click("Undo");
+  expect(container.querySelectorAll(".text-layer")).toHaveLength(1);
+  await click("Redo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(
+    duplicated.layers,
+  );
+});
+
+test.each([
+  ["Top.png", 0.5, 16, 16],
+  ["Top.png", 2, 16, 16],
+  ["Text", 0.5, 28, 34],
+  ["Text", 2, 28, 34],
+] as const)(
+  "duplicating %s at zoom %s keeps a 16-pixel document offset and survives reopening",
+  async (name, zoom, x, y) => {
+    await mount(setView(stackedProject(), zoom, 20, -10));
+    await selectLayer(name);
+    await click("Duplicate layer");
+    const duplicated = await openSavedProjectFromEditor();
+    const original = duplicated.layers.find((layer) => layer.name === name)!;
+    const copy = duplicated.layers.find(
+      (layer) => layer.name === `${name} copy`,
+    )!;
+
+    expect(copy.id).not.toBe(original.id);
+    expect(copy).toMatchObject({ x, y });
+    expect(new Set(duplicated.layers.map((layer) => layer.id)).size).toBe(4);
+    expect(layerButton(`${name} copy`).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    const selector = name === "Text" ? ".text-layer" : ".image-layer";
+    const rendered = container.querySelector<HTMLElement>(
+      `${selector}[title='${name} copy']`,
+    )!;
+    expect(rendered.style.left).toBe(`${x}px`);
+    expect(rendered.style.top).toBe(`${y}px`);
+
+    const serialized = saved!;
+    window.screenshotEditorFiles!.open = async () => [
+      {
+        name: "duplicated.screenshot-project.json",
+        bytes: new TextEncoder().encode(serialized),
+      },
+    ];
+    await click("Open project");
+    expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(4);
+    expect(
+      container.querySelector(`${selector}[title='${name} copy']`),
+    ).not.toBeNull();
+    expect((await openSavedProjectFromEditor()).layers).toEqual(
+      duplicated.layers,
+    );
+  },
+);
 
 test("the visible delete action removes the selected layer, selects the next row, and supports undo and redo", async () => {
   expect(stackedProject().layers.map((layer) => layer.id)).toEqual([
