@@ -25,6 +25,7 @@ import {
   nudgeLayer,
   openProject,
   openSavedProject,
+  parseColoredText,
   renameLayer,
   redo,
   reorderLayer,
@@ -72,7 +73,8 @@ const PRESETS = [
 
 const SCALE_PRESETS = [0.25, 0.5, 1, 2] as const;
 const TEXT_EDIT_FRAME_WIDTH = 6;
-const TOOL_MENUS = ["Properties", "Export", "Stitch"] as const;
+const SAMPLE_CHAT = "* John Smith looks around.\nJohn Smith says: Hello there.\nJohn Smith whispers: Follow me.";
+const TOOL_MENUS = ["Chat", "Properties", "Export", "Stitch"] as const;
 type ToolMenu = (typeof TOOL_MENUS)[number];
 
 type StitchScreen = {
@@ -416,7 +418,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [exportError, setExportError] = useState<string>();
   const [stitchScreens, setStitchScreens] = useState<StitchScreen[]>([]);
   const [stitchError, setStitchError] = useState<string>();
-  const [activeMenu, setActiveMenu] = useState<ToolMenu>("Properties");
+  const [activeMenu, setActiveMenu] = useState<ToolMenu>("Chat");
+  const [chatDraft, setChatDraft] = useState("");
   const [editingTextLayerId, setEditingTextLayerId] = useState<string>();
   const [selectTextOnEdit, setSelectTextOnEdit] = useState(false);
   const [hasTextSelection, setHasTextSelection] = useState(false);
@@ -429,6 +432,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
   const textEditor = useRef<TextEditorHandle | null>(null);
+  const chatDraftRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const toolPanelRef = useRef<HTMLElement>(null);
@@ -439,6 +443,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     selectedLayer?.kind === "image" ? selectedLayer : undefined;
   const selectedTextLayer =
     selectedLayer?.kind === "text" ? selectedLayer : undefined;
+  const draftContent = parseColoredText(chatDraft);
+  const hasDraftText = draftContent.text.trim().length > 0;
   const presentationProject = editingTextPreview
     ? {
         ...project,
@@ -539,6 +545,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       );
       setSelectedLayerId(id);
       setActiveMenu("Properties");
+      setPlacingText(false);
       setWelcomeDismissed(true);
       setImportError(undefined);
     } catch (error) {
@@ -655,6 +662,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }
 
   function placeTextBox(event: { clientX: number; clientY: number }) {
+    if (!hasDraftText) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -666,9 +674,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     const id = crypto.randomUUID();
-    setProject((current) => addTextLayer(current, id, { x, y }));
+    setProject((current) => addTextLayer(current, id, { x, y }, draftContent));
     setSelectedLayerId(id);
-    startTextEditing(id);
+    resetTextEditing();
+    setChatDraft("");
     setPlacingText(false);
     setActiveMenu("Properties");
     setWelcomeDismissed(true);
@@ -893,6 +902,12 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && placingText) {
+        event.preventDefault();
+        setPlacingText(false);
+        chatDraftRef.current?.focus();
+        return;
+      }
       if (
         event.target instanceof HTMLElement &&
         event.target.matches("input, textarea, select, button, [contenteditable='true']")
@@ -906,11 +921,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       ) {
         event.preventDefault();
         setProject((current) => (event.shiftKey ? redo(current) : undo(current)));
-        return;
-      }
-
-      if (event.key === "Escape") {
-        setPlacingText(false);
         return;
       }
 
@@ -944,7 +954,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedLayerId]);
+  }, [selectedLayerId, placingText]);
 
   const layerActions: LayerActions = {
     select: (layerId) => {
@@ -1019,8 +1029,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               aria-pressed={placingText}
               className={placingText ? "active-control" : undefined}
               onClick={() => {
-                setPlacingText((current) => !current);
-                setWelcomeDismissed(true);
+                setActiveMenu("Chat");
+                setToolsPanelOpen(true);
+                setPlacingText(false);
+                requestAnimationFrame(() => chatDraftRef.current?.focus());
               }}
             >
               Add text
@@ -1061,6 +1073,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               type="button"
               onClick={() => {
                 setActiveMenu("Stitch");
+                setPlacingText(false);
                 setToolsPanelOpen(true);
               }}
             >
@@ -1102,13 +1115,61 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 aria-controls="active-tool-panel"
                 className={activeMenu === menu ? "active" : ""}
                 key={menu}
-                onClick={() => setActiveMenu(menu)}
+                onClick={() => {
+                  setActiveMenu(menu);
+                  if (menu !== "Chat") setPlacingText(false);
+                }}
               >
                 {menu}
               </button>
             ))}
           </nav>
           <div id="active-tool-panel" role="tabpanel" aria-label={`${activeMenu} tools`}>
+          {activeMenu === "Chat" ? (
+            <div className="chat-draft">
+              <span className="panel-heading">Draft chat</span>
+              <p>Type or paste chat lines, then place them on the canvas.</p>
+              <label>
+                Chat text
+                <textarea
+                  ref={chatDraftRef}
+                  aria-label="Chat draft"
+                  value={chatDraft}
+                  onChange={(event) => setChatDraft(event.target.value)}
+                  placeholder="John Smith says: Hello."
+                  rows={7}
+                />
+              </label>
+              <button type="button" onClick={() => setChatDraft(SAMPLE_CHAT)}>
+                Try a sample
+              </button>
+              <button
+                type="button"
+                className="chat-place-action"
+                disabled={!hasDraftText || placingText}
+                onClick={() => {
+                  setPlacingText(true);
+                  setWelcomeDismissed(true);
+                }}
+              >
+                Place on canvas
+              </button>
+              {placingText ? (
+                <>
+                  <p>Click the canvas to place this text, or cancel to keep the draft.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPlacingText(false);
+                      chatDraftRef.current?.focus();
+                    }}
+                  >
+                    Cancel placement
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {activeMenu === "Export" ? (
             <div className="control-group">
               <span className="panel-heading">Export settings</span>

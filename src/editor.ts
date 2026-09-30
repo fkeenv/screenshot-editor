@@ -649,6 +649,7 @@ export function addTextLayer(
   project: Project,
   id: string,
   position: { x: number; y: number } = { x: 32, y: 32 },
+  content: TextContent = { text: "Text", colorRuns: [] },
 ): Project {
   const layer: TextLayer = {
     id,
@@ -656,8 +657,8 @@ export function addTextLayer(
     name: nextLayerName(project, "Text"),
     visible: true,
     opacity: 1,
-    text: "Text",
-    colorRuns: [],
+    text: content.text,
+    colorRuns: content.colorRuns,
     x: position.x,
     y: position.y,
     fontFamily: "Arial",
