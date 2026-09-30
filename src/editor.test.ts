@@ -6,6 +6,7 @@ import {
   cropImageLayer,
   colorTextRange,
   contentToDocument,
+  deleteLayer,
   documentToContent,
   editTextLayer,
   fitImageLayerToCanvas,
@@ -42,6 +43,30 @@ const TEST_IMAGE = {
 function projectWithImage() {
   return addImageLayer(openProject(), TEST_IMAGE);
 }
+
+test("deleting a layer removes it, saves the remaining stack, and restores it with one undo step", () => {
+  const image = projectWithImage();
+  const stacked = addTextLayer(image, "chat-1", { x: 80, y: 56 }, {
+    text: "John says hello.",
+    colorRuns: [{ start: 10, end: 16, color: "#edaa41" }],
+  });
+
+  const deleted = deleteLayer(stacked, "image-1");
+
+  expect(deleted.layers.map((layer) => layer.id)).toEqual(["chat-1"]);
+  expect(deleted.past).toHaveLength(stacked.past.length + 1);
+  expect(openSavedProject(saveProject(deleted)).layers).toEqual(deleted.layers);
+  expect(undo(deleted).layers).toEqual(stacked.layers);
+  expect(redo(deleted).layers).toEqual(deleted.layers);
+});
+
+test("deleting an unknown layer is a no-op and deleting the only layer empties the project", () => {
+  const image = projectWithImage();
+  expect(deleteLayer(image, "missing")).toBe(image);
+  const deleted = deleteLayer(image, "image-1");
+  expect(deleted.layers).toEqual([]);
+  expect(undo(deleted).layers).toEqual(image.layers);
+});
 
 test("a new project opens on a canvas with a visible size", () => {
   const project = openProject();
