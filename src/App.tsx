@@ -498,6 +498,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
   function duplicateSelectedLayer() {
     if (!selectedLayer) return;
+    cancelLayerInteractions(selectedLayer.id);
     const copyId = crypto.randomUUID();
     setProject((current) => duplicateLayer(current, selectedLayer.id, copyId));
     setSelectedLayerId(copyId);

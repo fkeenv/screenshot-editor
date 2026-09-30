@@ -160,6 +160,17 @@ async function keyDown(key: string, target: HTMLElement = document.body) {
   );
 }
 
+async function pointer(target: Element, type: string, x: number) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    clientX: x,
+    clientY: 0,
+    buttons: type === "pointerup" ? 0 : 1,
+  });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  await act(async () => target.dispatchEvent(event));
+}
+
 test("the visible duplicate action selects a rendered text copy and supports undo and redo", async () => {
   await mount();
   expect(button("Duplicate layer").disabled).toBe(true);
@@ -267,6 +278,38 @@ test("the visible delete action removes the selected layer, selects the next row
 });
 
 test.each([
+  ["Top.png", ".image-layer[title='Top.png']"],
+  ["Text", ".text-resize-handle.se"],
+])(
+  "duplicating %s ends its active gesture so a late release keeps the copy and its history",
+  async (name, selector) => {
+    const project = stackedProject();
+    await mount(project);
+    await selectLayer(name);
+    const handle = container.querySelector(selector)!;
+    await pointer(handle, "pointerdown", 0);
+    await pointer(handle, "pointermove", 40);
+    await click("Duplicate layer");
+    await pointer(handle, "pointerup", 80);
+
+    const duplicated = await openSavedProjectFromEditor();
+    expect(duplicated.layers).toHaveLength(4);
+    expect(
+      duplicated.layers.filter((layer) => !layer.name.endsWith(" copy")),
+    ).toEqual(project.layers);
+    expect(layerButton(`${name} copy`).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    await click("Undo");
+    expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+    await click("Redo");
+    expect((await openSavedProjectFromEditor()).layers).toEqual(
+      duplicated.layers,
+    );
+  },
+);
+
+test.each([
   ["Top.png", "Text"],
   ["Bottom.png", "Text"],
   ["Text", "Bottom.png"],
@@ -346,20 +389,10 @@ test("deleting during an image drag cancels the gesture before a late pointer re
     }),
   );
   const image = container.querySelector(".image-layer")!;
-  async function pointer(type: string, x: number) {
-    const event = new MouseEvent(type, {
-      bubbles: true,
-      clientX: x,
-      clientY: 0,
-      buttons: type === "pointerup" ? 0 : 1,
-    });
-    Object.defineProperty(event, "pointerId", { value: 1 });
-    await act(async () => image.dispatchEvent(event));
-  }
-  await pointer("pointerdown", 0);
-  await pointer("pointermove", 40);
+  await pointer(image, "pointerdown", 0);
+  await pointer(image, "pointermove", 40);
   await click("Delete layer");
-  await pointer("pointerup", 80);
+  await pointer(image, "pointerup", 80);
 
   const deleted = await openSavedProjectFromEditor();
   expect(deleted.layers).toEqual([]);
@@ -374,20 +407,10 @@ test("deleting during a text resize cancels the edit before Undo restores the or
   await mount();
   await selectLayer("Text");
   const handle = container.querySelector(".text-resize-handle.se")!;
-  async function pointer(type: string, x: number) {
-    const event = new MouseEvent(type, {
-      bubbles: true,
-      clientX: x,
-      clientY: 0,
-      buttons: type === "pointerup" ? 0 : 1,
-    });
-    Object.defineProperty(event, "pointerId", { value: 1 });
-    await act(async () => handle.dispatchEvent(event));
-  }
-  await pointer("pointerdown", 0);
-  await pointer("pointermove", 40);
+  await pointer(handle, "pointerdown", 0);
+  await pointer(handle, "pointermove", 40);
   await click("Delete layer");
-  await pointer("pointerup", 80);
+  await pointer(handle, "pointerup", 80);
 
   expect(
     (await openSavedProjectFromEditor()).layers.map((layer) => layer.id),
