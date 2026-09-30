@@ -19,5 +19,9 @@ test("an empty editor shows three starting paths outside the canvas", () => {
   expect(markup).toContain("Open project");
   expect(markup).toContain("Start blank");
   expect(markup).toContain('class="canvas"');
-  expect(markup).not.toMatch(/drag.and.drop|clipboard|paste/i);
+  const welcome = markup.match(/<section class="welcome-screen"[\s\S]*?<\/section>/)?.[0];
+  expect(welcome).not.toMatch(/drag.and.drop|clipboard|paste/i);
+  expect(markup).toContain('aria-label="Chat draft"');
+  expect(markup).toContain("Try a sample");
+  expect(markup).toContain("Place on canvas");
 });

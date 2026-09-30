@@ -84,6 +84,37 @@ test("a saved project reopens with its editable canvas and layer stack intact", 
   expect(reopened).toEqual({ ...project, past: [], future: [] });
 });
 
+test("a chat draft becomes one editable, undoable layer with colors that survive reopening", () => {
+  const content = parseColoredText(
+    "* John Smith looks around.\nJohn Smith says: Hello.",
+  );
+  const placed = addTextLayer(openProject(), "chat-1", { x: 80, y: 56 }, content);
+  const layer = placed.layers[0];
+
+  expect(layer).toMatchObject({
+    kind: "text",
+    x: 80,
+    y: 56,
+    text: content.text,
+    colorRuns: content.colorRuns,
+  });
+  expect(undo(placed).layers).toHaveLength(0);
+  expect(redo(undo(placed)).layers[0]).toEqual(layer);
+  expect(openSavedProject(saveProject(placed)).layers[0]).toEqual(layer);
+
+  const editedContent = replaceTextRange(
+    content,
+    content.text.length,
+    content.text.length,
+    " Again.",
+  );
+  const edited = editTextLayer(placed, "chat-1", editedContent);
+  expect(openSavedProject(saveProject(edited)).layers[0]).toMatchObject({
+    text: editedContent.text,
+    colorRuns: editedContent.colorRuns,
+  });
+});
+
 test("opening an unsupported project file version gives a useful error", () => {
   const serialized = JSON.stringify({ version: 2, project: {} });
 
