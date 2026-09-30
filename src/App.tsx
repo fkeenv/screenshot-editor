@@ -21,6 +21,7 @@ import {
   beginUndoableEdit,
   cropImageLayer,
   deleteLayer,
+  duplicateLayer,
   editTextLayer,
   fitImageLayerToCanvas,
   nudgeLayer,
@@ -493,6 +494,14 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
     setProject((current) => deleteLayer(current, layerId));
     setSelectedLayerId(nextLayer?.id);
+  }
+
+  function duplicateSelectedLayer() {
+    if (!selectedLayer) return;
+    cancelLayerInteractions(selectedLayer.id);
+    const copyId = crypto.randomUUID();
+    setProject((current) => duplicateLayer(current, selectedLayer.id, copyId));
+    setSelectedLayerId(copyId);
   }
 
   function beginControlEdit<Value>(
@@ -1149,6 +1158,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             </button>
             <button type="button" disabled={!selectedImageLayer} onClick={startImageCrop}>
               Crop image
+            </button>
+            <button
+              type="button"
+              disabled={!selectedLayer}
+              onClick={duplicateSelectedLayer}
+            >
+              Duplicate layer
             </button>
             <button
               type="button"
