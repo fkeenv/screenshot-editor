@@ -661,6 +661,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     });
   }
 
+  function cancelTextPlacement() {
+    setPlacingText(false);
+    chatDraftRef.current?.focus();
+  }
+
   function placeTextBox(event: { clientX: number; clientY: number }) {
     if (!hasDraftText) return;
     const canvas = canvasRef.current;
@@ -904,8 +909,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && placingText) {
         event.preventDefault();
-        setPlacingText(false);
-        chatDraftRef.current?.focus();
+        cancelTextPlacement();
         return;
       }
       if (
@@ -1159,10 +1163,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   <p>Click the canvas to place this text, or cancel to keep the draft.</p>
                   <button
                     type="button"
-                    onClick={() => {
-                      setPlacingText(false);
-                      chatDraftRef.current?.focus();
-                    }}
+                    onClick={cancelTextPlacement}
                   >
                     Cancel placement
                   </button>
