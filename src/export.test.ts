@@ -36,7 +36,9 @@ beforeAll(async () => {
   const { init: initWebp } = await import("@jsquash/webp/encode");
   prepareExportCodecs(async () => {
     await initPng(
-      await readFile(require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm")),
+      await readFile(
+        require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
+      ),
     );
     await initJpeg({
       wasmBinary: await readFile(
@@ -159,12 +161,8 @@ test("export produces a jpeg and a webp of the canvas", async () => {
   expect(jpeg.mediaType).toBe("image/jpeg");
   expect(webp.mediaType).toBe("image/webp");
   expect(Array.from(jpeg.bytes.slice(0, 2))).toEqual([0xff, 0xd8]);
-  expect(Array.from(webp.bytes.slice(0, 4))).toEqual([
-    0x52, 0x49, 0x46, 0x46,
-  ]);
-  expect(Array.from(webp.bytes.slice(8, 12))).toEqual([
-    0x57, 0x45, 0x42, 0x50,
-  ]);
+  expect(Array.from(webp.bytes.slice(0, 4))).toEqual([0x52, 0x49, 0x46, 0x46]);
+  expect(Array.from(webp.bytes.slice(8, 12))).toEqual([0x57, 0x45, 0x42, 0x50]);
   const jpegImage = await readPixels(jpeg.bytes);
   const webpImage = await readPixels(webp.bytes);
   expect(jpegImage.width).toBe(3);
@@ -193,7 +191,10 @@ test("export paints an image layer onto the canvas", async () => {
   });
   project = moveLayer(project, "image-1", 1, 0);
 
-  const exported = await exportFlattened(project, { format: "png", quality: 80 });
+  const exported = await exportFlattened(project, {
+    format: "png",
+    quality: 80,
+  });
   const image = await readPixels(exported.bytes);
 
   expect(Array.from(image.data.slice(4, 8))).toEqual([255, 0, 0, 255]);
@@ -229,8 +230,14 @@ test("lowering quality makes the jpeg and webp smaller", async () => {
     height: 48,
   });
 
-  const jpegHigh = await exportFlattened(project, { format: "jpeg", quality: 80 });
-  const jpegLow = await exportFlattened(project, { format: "jpeg", quality: 20 });
+  const jpegHigh = await exportFlattened(project, {
+    format: "jpeg",
+    quality: 80,
+  });
+  const jpegLow = await exportFlattened(project, {
+    format: "jpeg",
+    quality: 20,
+  });
   const webpHigh = await exportFlattened(project, {
     format: "webp",
     quality: 80,
@@ -321,6 +328,55 @@ test("hidden layers are left out and opacity is kept", async () => {
   expect(Array.from(hidden.data)).toEqual([0, 0, 0, 0]);
 });
 
+test.each(["png", "webp"] as const)(
+  "%s flat and stitch exports keep transparent source pixels and layer opacity without preview colors",
+  async (format) => {
+    const source = createCanvas(2, 1);
+    const context = source.getContext("2d");
+    const pixels = context.createImageData(2, 1);
+    pixels.data.set([255, 0, 0, 128, 0, 0, 255, 255]);
+    context.putImageData(pixels, 0, 0);
+    let project = addImageLayer(setCanvasSize(openProject(), 4, 2), {
+      id: "translucent",
+      name: "Transparent image",
+      source: source.toDataURL(),
+      format: "image/png",
+      width: 2,
+      height: 1,
+    });
+    project = setLayerOpacity(project, "translucent", 0.5);
+    const expected = [255, 0, 0, 64, 0, 0, 255, 128, ...Array(24).fill(0)];
+    const options = { format, quality: 80, lossless: true };
+    const flat = await readPixels(
+      (await exportFlattened(project, options)).bytes,
+    );
+    expect(Array.from(flat.data)).toEqual(expected);
+    const stitched = await readPixels(
+      (await exportStitch([project, project], options)).bytes,
+    );
+    expect(stitched.height).toBe(4);
+    expect(Array.from(stitched.data)).toEqual([...expected, ...expected]);
+  },
+);
+
+test("JPEG stitch retains its opaque flattening background rather than preview colors", async () => {
+  const project = setCanvasSize(openProject(), 2, 2);
+  const stitched = await readPixels(
+    (await exportStitch([project, project], { format: "jpeg", quality: 80 }))
+      .bytes,
+  );
+  expect(stitched.height).toBe(4);
+  for (let index = 0; index < stitched.data.length; index += 4) {
+    expect(stitched.data[index]).toBeGreaterThanOrEqual(16);
+    expect(stitched.data[index]).toBeLessThanOrEqual(18);
+    expect(stitched.data[index + 1]).toBeGreaterThanOrEqual(23);
+    expect(stitched.data[index + 1]).toBeLessThanOrEqual(25);
+    expect(stitched.data[index + 2]).toBeGreaterThanOrEqual(38);
+    expect(stitched.data[index + 2]).toBeLessThanOrEqual(40);
+    expect(stitched.data[index + 3]).toBe(255);
+  }
+});
+
 test("an upper image covers a lower image", async () => {
   let project = setCanvasSize(openProject(), 1, 1);
   project = addImageLayer(project, {
@@ -370,8 +426,10 @@ test("export paints colored and outlined text", async () => {
     const green = image.data[index + 1] ?? 0;
     const blue = image.data[index + 2] ?? 0;
     const alpha = image.data[index + 3] ?? 0;
-    if (red > 200 && blue > 200 && green < 40 && alpha > 200) painted.push(index);
-    if (red < 40 && green < 40 && blue < 40 && alpha > 100) outlined.push(index);
+    if (red > 200 && blue > 200 && green < 40 && alpha > 200)
+      painted.push(index);
+    if (red < 40 && green < 40 && blue < 40 && alpha > 100)
+      outlined.push(index);
   }
   expect(painted.length).toBeGreaterThan(0);
   expect(outlined.length).toBeGreaterThan(0);
