@@ -331,7 +331,24 @@ export type TextLayer = {
   wrapWidth: number;
 };
 
-export type Layer = ImageLayer | TextLayer;
+export type RectangleLayer = {
+  id: string;
+  kind: "rectangle";
+  name: string;
+  visible: boolean;
+  opacity: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: string;
+};
+
+export type RectangleLayerEdit = Partial<
+  Pick<RectangleLayer, "x" | "y" | "width" | "height" | "fill">
+>;
+
+export type Layer = ImageLayer | TextLayer | RectangleLayer;
 
 export type TextLayerEdit = Partial<
   Pick<
@@ -455,6 +472,20 @@ function isTextLayer(value: unknown): value is TextLayer {
   );
 }
 
+function isRectangleLayer(value: unknown): value is RectangleLayer {
+  return (
+    isRecord(value) &&
+    isBaseLayer(value) &&
+    value.kind === "rectangle" &&
+    isFiniteNumber(value.width) &&
+    value.width > 0 &&
+    isFiniteNumber(value.height) &&
+    value.height > 0 &&
+    typeof value.fill === "string" &&
+    /^#[0-9a-f]{6}$/i.test(value.fill)
+  );
+}
+
 function isCanvasBackground(value: unknown): value is CanvasBackground {
   return isRecord(value) && (
     value.kind === "transparent" ||
@@ -478,7 +509,7 @@ function isSnapshot(value: unknown): value is ProjectFile["project"] {
     isFiniteNumber(value.panY) &&
     Array.isArray(value.layers) &&
     value.layers.every(
-      (layer) => isImageLayer(layer) || isTextLayer(layer),
+      (layer) => isImageLayer(layer) || isTextLayer(layer) || isRectangleLayer(layer),
     )
   );
 }
@@ -722,6 +753,43 @@ export function addTextLayer(
   return commit(project, {
     ...snapshot(project),
     layers: [...project.layers, layer],
+  });
+}
+
+export function addRectangleLayer(project: Project, id: string): Project {
+  if (!id || project.layers.some((layer) => layer.id === id)) return project;
+  const width = Math.min(200, project.canvasWidth);
+  const height = Math.min(120, project.canvasHeight);
+  const layer: RectangleLayer = {
+    id,
+    kind: "rectangle",
+    name: nextLayerName(project, "Rectangle"),
+    visible: true,
+    opacity: 1,
+    x: (project.canvasWidth - width) / 2,
+    y: (project.canvasHeight - height) / 2,
+    width,
+    height,
+    fill: "#d5b273",
+  };
+  return commit(project, {
+    ...snapshot(project),
+    layers: [...project.layers, layer],
+  });
+}
+
+export function editRectangleLayer(
+  project: Project,
+  layerId: string,
+  changes: RectangleLayerEdit,
+): Project {
+  return updateLayer(project, layerId, "rectangle", (layer) => {
+    const next = { ...layer, ...changes };
+    if (!isRectangleLayer(next)) return layer;
+    const changed = (Object.keys(changes) as (keyof RectangleLayerEdit)[]).some(
+      (key) => next[key] !== layer[key],
+    );
+    return changed ? next : layer;
   });
 }
 

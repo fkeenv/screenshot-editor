@@ -278,7 +278,7 @@ export function LayersPanel({
       </Group>
       {layers.length === 0 ? (
         <Text c="dimmed" size="xs" px="sm" py="md">
-          Add an image or text to get started.
+          Add an image, text, or rectangle to get started.
         </Text>
       ) : (
         <ScrollArea type="auto" style={{ flex: 1 }}>

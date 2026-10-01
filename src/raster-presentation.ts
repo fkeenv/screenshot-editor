@@ -2,6 +2,7 @@ import { canvasFont } from "./canvas-text";
 import type {
   ImageLayerPresentation,
   MeasureText,
+  RectangleLayerPresentation,
   TextLayerPresentation,
 } from "./presentation";
 
@@ -55,6 +56,25 @@ export type TextDrawContext = {
   fillText(text: string, x: number, y: number): void;
   strokeText(text: string, x: number, y: number): void;
 };
+
+export function drawRectangleLayer(
+  context: {
+    globalAlpha: number;
+    fillStyle: string;
+    fillRect(x: number, y: number, width: number, height: number): void;
+  },
+  rectangle: RectangleLayerPresentation,
+) {
+  context.globalAlpha = rectangle.opacity;
+  context.fillStyle = rectangle.fill;
+  context.fillRect(
+    rectangle.frame.x,
+    rectangle.frame.y,
+    rectangle.frame.width,
+    rectangle.frame.height,
+  );
+  context.globalAlpha = 1;
+}
 
 type TextMeasureContext = {
   font: string;

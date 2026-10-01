@@ -9,6 +9,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   addImageLayer,
+  addRectangleLayer,
   addTextLayer,
   cropImageLayer,
   moveLayer,
@@ -148,6 +149,96 @@ function loadEditorStyles() {
   style.textContent = editorStyles;
   document.head.append(style);
 }
+
+test("rectangle tool adds a selected editable layer and supports size, color, duplicate, delete and undo", async () => {
+  await mount(openProject());
+  await click("Add rectangle");
+  expect(container.querySelector(".welcome-screen")).toBeNull();
+  const rectangle = container.querySelector<HTMLElement>(".rectangle-layer")!;
+  expect(rectangle.classList.contains("selected")).toBe(true);
+  expect(rectangle.style.width).toBe("200px");
+  expect(container.textContent).toContain("Rectangle properties");
+  expect(container.querySelectorAll(".text-layer")).toHaveLength(0);
+  const field = container.querySelector<HTMLInputElement>('[aria-label="Rectangle width"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, "75");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await keyDown("Enter", field);
+  expect(rectangle.style.width).toBe("75px");
+  const color = container.querySelector<HTMLInputElement>('[aria-label="Rectangle fill color"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(color, "#123456");
+    color.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(rectangle.style.backgroundColor).toBe("rgb(18, 52, 86)");
+  const savedProject = await openSavedProjectFromEditor();
+  expect(savedProject.layers[0]).toMatchObject({ kind: "rectangle", width: 75, fill: "#123456" });
+  await click("Undo");
+  expect(rectangle.style.backgroundColor).toBe("rgb(213, 178, 115)");
+  await click("Redo");
+  await click("Duplicate layer");
+  expect(container.querySelectorAll(".rectangle-layer")).toHaveLength(2);
+  await click("Delete layer");
+  expect(container.querySelectorAll(".rectangle-layer")).toHaveLength(1);
+  await click("Undo");
+  expect(container.querySelectorAll(".rectangle-layer")).toHaveLength(2);
+  window.screenshotEditorFiles!.open = async () => [{
+    name: "rectangle.screenshot-project.json",
+    bytes: new TextEncoder().encode(saveProject(savedProject)),
+  }];
+  await click("Open project");
+  expect(container.querySelectorAll(".rectangle-layer")).toHaveLength(1);
+  expect(container.querySelector<HTMLElement>(".rectangle-layer")!.style.width).toBe("75px");
+});
+
+test("invalid and cancelled rectangle sizes do not change the layer or history", async () => {
+  const project = addRectangleLayer(openProject(), "rectangle");
+  await mount(project);
+  await selectLayer("Rectangle");
+  const field = container.querySelector<HTMLInputElement>('[aria-label="Rectangle width"]')!;
+  for (const value of ["0", "-10", ""]) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await keyDown("Enter", field);
+    expect(field.value).toBe("200");
+  }
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, "75");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await keyDown("Escape", field);
+  expect(field.value).toBe("200");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+  expect(button("Undo").disabled).toBe(true);
+});
+
+test("adding a rectangle cancels an active layer drag before a late release", async () => {
+  const project = addRectangleLayer(openProject(), "rectangle");
+  await mount(project);
+  const original = container.querySelector(".rectangle-layer")!;
+  await pointer(original, "pointerdown", 100, 100);
+  await pointer(original, "pointermove", 150, 150);
+  await click("Add rectangle");
+  await pointer(original, "pointerup", 150, 150);
+  expect(container.querySelectorAll(".rectangle-layer")).toHaveLength(2);
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+});
+
+test("rectangle dragging accounts for zoom and remains one undoable move", async () => {
+  const project = setView(addRectangleLayer(openProject(), "rectangle"), 2, 50, -20);
+  await mount(project);
+  const rectangle = container.querySelector(".rectangle-layer")!;
+  await pointer(rectangle, "pointerdown", 100, 100);
+  await pointer(rectangle, "pointermove", 120, 140);
+  await pointer(rectangle, "pointerup", 140, 160);
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x: 320, y: 270 });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+});
 
 test("canvas background controls preview a saved color independently of appearance and support undo", async () => {
   loadEditorStyles();

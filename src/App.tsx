@@ -20,11 +20,13 @@ import {
 } from "./dom-presentation";
 import {
   addImageLayer,
+  addRectangleLayer,
   addTextLayer,
   beginUndoableEdit,
   cropImageLayer,
   deleteLayer,
   duplicateLayer,
+  editRectangleLayer,
   editTextLayer,
   fitImageLayerToCanvas,
   moveLayer,
@@ -77,6 +79,7 @@ import { PresentedText } from "./PresentedText";
 import { ImageCrop } from "./ImageCrop";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
+import { RectangleControls } from "./RectangleControls";
 import {
   prepareImageImport,
   transferredImage,
@@ -586,6 +589,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     selectedLayer?.kind === "image" ? selectedLayer : undefined;
   const selectedTextLayer =
     selectedLayer?.kind === "text" ? selectedLayer : undefined;
+  const selectedRectangleLayer =
+    selectedLayer?.kind === "rectangle" ? selectedLayer : undefined;
   const draftContent = parseColoredText(chatDraft);
   const hasDraftText = draftContent.text.trim().length > 0;
   const presentationProject = editingTextPreview
@@ -736,6 +741,21 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         error instanceof Error ? error.message : "The image could not be imported.",
       );
     }
+  }
+
+  function insertRectangle() {
+    for (const layerId of [...layerInteractions.current.keys()]) {
+      cancelLayerInteractions(layerId);
+    }
+    textEditor.current?.commit();
+    resetTextEditing();
+    const id = crypto.randomUUID();
+    setProject((current) => addRectangleLayer(current, id));
+    setSelectedLayerId(id);
+    setActiveMenu("Properties");
+    setToolsPanelOpen(true);
+    setPlacingText(false);
+    setWelcomeDismissed(true);
   }
 
   async function importImage() {
@@ -1143,7 +1163,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     event: PointerEvent<HTMLDivElement>,
     layer: {
       id: string;
-      kind: "image" | "text";
+      kind: "image" | "text" | "rectangle";
       x: number;
       y: number;
     },
@@ -1455,6 +1475,14 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           setPlacingText(false);
           requestAnimationFrame(() => chatDraftRef.current?.focus());
         }}><EditorIcon name="text" /></button>
+        <button
+          type="button"
+          title="Add rectangle"
+          aria-label="Add rectangle"
+          onClick={insertRectangle}
+        >
+          <EditorIcon name="rectangle" />
+        </button>
         <button type="button" title="Import image" aria-label="Import image" onClick={() => void importImage()}><EditorIcon name="image" /></button>
       </nav>
 
@@ -1740,7 +1768,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 <>
                   <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
                   <span className="panel-heading w-full text-editor-strong text-[13px] font-bold">
-                    {selectedLayer.kind === "image" ? "Image" : "Text"} properties
+                    {selectedLayer.kind === "image" ? "Image" : selectedLayer.kind === "rectangle" ? "Rectangle" : "Text"} properties
                   </span>
                   <SelectedLayerControls
                     key={selectedLayer.id}
@@ -1812,6 +1840,18 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     }
                   />
                 </>
+              ) : null}
+
+              {selectedRectangleLayer ? (
+                <RectangleControls
+                  key={selectedRectangleLayer.id}
+                  layer={selectedRectangleLayer}
+                  onEdit={(changes) =>
+                    setProject((current) =>
+                      editRectangleLayer(current, selectedRectangleLayer.id, changes),
+                    )
+                  }
+                />
               ) : null}
 
               {selectedTextLayer ? (
@@ -1985,6 +2025,32 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                       style={styles.content}
                     />
                   </div>
+                );
+              }
+
+              if (layer.kind === "rectangle") {
+                return (
+                  <div
+                    key={layer.id}
+                    title={layer.name}
+                    className={`canvas-layer absolute cursor-move touch-none rectangle-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                    style={{
+                      left: layer.frame.x,
+                      top: layer.frame.y,
+                      width: layer.frame.width,
+                      height: layer.frame.height,
+                      backgroundColor: layer.fill,
+                      opacity: layer.opacity,
+                    }}
+                    onPointerDown={(event) =>
+                      onLayerPointerDown(event, {
+                        id: layer.id,
+                        kind: layer.kind,
+                        x: layer.frame.x,
+                        y: layer.frame.y,
+                      })
+                    }
+                  />
                 );
               }
 

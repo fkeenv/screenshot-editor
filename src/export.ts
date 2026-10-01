@@ -5,6 +5,7 @@ import type { Project } from "./editor";
 import { presentProject, type ImageLayerPresentation } from "./presentation";
 import {
   drawImageLayer,
+  drawRectangleLayer,
   drawTextLayer,
   measureRasterText,
 } from "./raster-presentation";
@@ -179,6 +180,7 @@ async function paintLayers(
       frame: { ...layer.frame, y: layer.frame.y + offsetY },
     };
     if (positioned.kind === "image") await paintImage(context, positioned);
+    else if (positioned.kind === "rectangle") drawRectangleLayer(context, positioned);
     else drawTextLayer(context, positioned);
   }
 }
