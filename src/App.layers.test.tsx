@@ -97,6 +97,10 @@ beforeEach(() => {
     configurable: true,
     value: () => undefined,
   });
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: () => undefined,
+  });
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
     configurable: true,
     value: () => undefined,
@@ -173,6 +177,117 @@ test("canvas background controls preview a saved color independently of appearan
   );
   await click("Export");
   expect(container.textContent).toContain("#111827 for transparent projects");
+});
+
+test("new text previews a shadow and exposes separate shadow and outline controls", async () => {
+  loadEditorStyles();
+  await mount(addTextLayer(openProject(), "chat"));
+  await selectLayer("Text");
+  const text = container.querySelector<HTMLElement>(".text-layer")!;
+  expect(text.style.fontSize).toBe("14px");
+  expect(text.style.fontWeight).toBe("700");
+  expect(text.style.webkitTextStroke).toBe("1px #000000");
+  expect(text.style.textShadow).toBe("1px 1px 2px #000000");
+  const shadow = container.querySelector<HTMLInputElement>(
+    '[aria-label="Text shadow"]',
+  )!;
+  expect(shadow.checked).toBe(true);
+  await act(async () => shadow.click());
+  expect(text.style.textShadow).toBe("");
+  expect(text.style.webkitTextStroke).toBe("1px #000000");
+  await click("Undo");
+  expect(text.style.textShadow).toBe("1px 1px 2px #000000");
+  await act(async () =>
+    text.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  expect(container.querySelector(".inline-text-preview")).not.toBeNull();
+  expect(["none", "rgba(0, 0, 0, 0)"]).toContain(
+    getComputedStyle(container.querySelector(".inline-text-editor")!)
+      .textShadow,
+  );
+});
+
+test("text properties use one preset dropdown that applies a selection color with one undo step", async () => {
+  await mount(addTextLayer(openProject(), "chat"));
+  await selectLayer("Text");
+  const colors = container.querySelector<HTMLButtonElement>(
+    ".selection-colors button[data-text-color-control]",
+  )!;
+  expect(colors.disabled).toBe(true);
+  expect(container.querySelectorAll(".color-preset")).toHaveLength(0);
+  await act(async () =>
+    container
+      .querySelector(".text-layer")!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  expect(colors.disabled).toBe(false);
+  await act(async () => colors.click());
+  const options = [
+    ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+  ];
+  expect(options.map((option) => option.textContent)).toEqual([
+    "/me",
+    "/do",
+    "Say / shout",
+    "Low",
+    "Whisper",
+    "Phone speech",
+    "Item given / money",
+    "Inventory",
+    "Radio",
+    "HQ",
+    "Phone notice",
+    "Intercom / CK blue",
+    "CK red",
+    "Custom…",
+  ]);
+  expect(
+    options[0].querySelector<HTMLElement>(".text-color-swatch")!.style
+      .backgroundColor,
+  ).toBe("rgb(194, 163, 218)");
+  expect(
+    options.every((option) => option.querySelector(".text-color-swatch")),
+  ).toBe(true);
+  await act(async () =>
+    options.find((option) => option.textContent === "Whisper")!.click(),
+  );
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({
+    colorRuns: [{ start: 0, end: 4, color: "#eda841" }],
+  });
+  expect(colors.textContent).toBe("Whisper");
+  expect(
+    colors.querySelector<HTMLElement>(".text-color-swatch")!.style
+      .backgroundColor,
+  ).toBe("rgb(237, 168, 65)");
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({
+    colorRuns: [],
+  });
+});
+
+test("focusing the color dropdown preserves text selection and tabbing out does not steal focus", async () => {
+  await mount(addTextLayer(openProject(), "chat"));
+  await selectLayer("Text");
+  await act(async () =>
+    container
+      .querySelector(".text-layer")!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  const colors = container.querySelector<HTMLButtonElement>(
+    ".selection-colors button[data-text-color-control]",
+  )!;
+  await act(async () => {
+    container.querySelector<HTMLElement>('[contenteditable="true"]')!.focus();
+    colors.focus();
+  });
+  expect(colors.disabled).toBe(false);
+  expect(container.querySelector('[contenteditable="true"]')).not.toBeNull();
+  const width = container.querySelector<HTMLInputElement>(
+    '.text-controls input[min="1"][value="400"]',
+  )!;
+  await act(async () => width.focus());
+  expect(document.activeElement).toBe(width);
+  expect(container.querySelector('[contenteditable="true"]')).toBeNull();
 });
 
 test.each(["empty", "text-only"])(

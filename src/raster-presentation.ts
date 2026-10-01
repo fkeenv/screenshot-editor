@@ -41,6 +41,10 @@ export function drawImageLayer(
 }
 
 export type TextDrawContext = {
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  shadowBlur?: number;
+  shadowColor?: string;
   globalAlpha: number;
   fillStyle: string;
   strokeStyle: string;
@@ -76,6 +80,10 @@ export function drawTextLayer(
   context.lineWidth = text.outline.width;
   context.strokeStyle = text.outline.color;
   context.lineJoin = "round";
+  context.shadowOffsetX = text.shadow?.offsetX ?? 0;
+  context.shadowOffsetY = text.shadow?.offsetY ?? 0;
+  context.shadowBlur = text.shadow?.blur ?? 0;
+  context.shadowColor = text.shadow?.color ?? "transparent";
 
   for (const line of text.lines) {
     for (const segment of line.segments) {
@@ -88,4 +96,8 @@ export function drawTextLayer(
   }
 
   context.globalAlpha = 1;
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 0;
+  context.shadowBlur = 0;
+  context.shadowColor = "transparent";
 }

@@ -304,6 +304,13 @@ export function replaceTextRange(
   };
 }
 
+export type TextShadow = {
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  color: string;
+};
+
 export type TextLayer = {
   id: string;
   kind: "text";
@@ -319,6 +326,7 @@ export type TextLayer = {
   bold: boolean;
   outlineWidth: number;
   outlineColor: string;
+  shadow?: TextShadow;
   lineSpacing: number;
   wrapWidth: number;
 };
@@ -335,6 +343,7 @@ export type TextLayerEdit = Partial<
     | "bold"
     | "outlineWidth"
     | "outlineColor"
+    | "shadow"
     | "lineSpacing"
     | "wrapWidth"
   >
@@ -410,6 +419,18 @@ function isImageLayer(value: unknown): value is ImageLayer {
   );
 }
 
+function isTextShadow(value: unknown): value is TextShadow {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.offsetX) &&
+    isFiniteNumber(value.offsetY) &&
+    isFiniteNumber(value.blur) &&
+    value.blur >= 0 &&
+    typeof value.color === "string" &&
+    /^#[0-9a-f]{6}$/i.test(value.color)
+  );
+}
+
 function isTextLayer(value: unknown): value is TextLayer {
   if (!isRecord(value) || !Array.isArray(value.colorRuns)) return false;
   return (
@@ -428,6 +449,7 @@ function isTextLayer(value: unknown): value is TextLayer {
     typeof value.bold === "boolean" &&
     isFiniteNumber(value.outlineWidth) &&
     typeof value.outlineColor === "string" &&
+    (value.shadow === undefined || isTextShadow(value.shadow)) &&
     isFiniteNumber(value.lineSpacing) &&
     isFiniteNumber(value.wrapWidth)
   );
@@ -688,10 +710,11 @@ export function addTextLayer(
     x: position.x,
     y: position.y,
     fontFamily: "Arial",
-    fontSize: 24,
-    bold: false,
-    outlineWidth: 2,
+    fontSize: 14,
+    bold: true,
+    outlineWidth: 1,
     outlineColor: "#000000",
+    shadow: { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" },
     lineSpacing: 1.2,
     wrapWidth: 400,
   };
@@ -707,6 +730,7 @@ export function editTextLayer(
   layerId: string,
   changes: TextLayerEdit,
 ): Project {
+  if (changes.shadow !== undefined && !isTextShadow(changes.shadow)) return project;
   return updateLayer(project, layerId, "text", (layer) => {
     const changed = (Object.keys(changes) as (keyof TextLayerEdit)[]).some(
       (property) => changes[property] !== layer[property],

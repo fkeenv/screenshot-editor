@@ -1,9 +1,11 @@
 import type { AppearancePreference } from "./appearance";
+import { Combobox, Input, InputBase, NativeSelect, useCombobox } from "@mantine/core";
 import {
   useEffect,
   useRef,
   useState,
   type FormEvent,
+  type FocusEvent,
   type PointerEvent,
 } from "react";
 import {
@@ -249,36 +251,54 @@ function TextControls({
   canColorSelection: boolean;
   onApplyColor: (color: string) => void;
   onBeginColorInteraction: () => void;
-  onFinishColorInteraction: () => void;
+  onFinishColorInteraction: (restoreFocus?: boolean) => void;
 }) {
   const [customColor, setCustomColor] = useState("#ffffff");
+  const [colorPreset, setColorPreset] = useState("");
+  const colorCombobox = useCombobox({
+    onDropdownClose: () => colorCombobox.resetSelectedOption(),
+    onDropdownOpen: () => {
+      onBeginColorInteraction();
+      colorCombobox.selectFirstOption();
+    },
+  });
+  const selectedColor =
+    colorPreset === "custom"
+      ? { color: customColor, label: "Custom…" }
+      : TEXT_COLOR_PRESETS[colorPreset as keyof typeof TEXT_COLOR_PRESETS];
+
+  function finishColorBlur(event: FocusEvent) {
+    if (
+      event.relatedTarget instanceof HTMLElement &&
+      event.relatedTarget.closest(
+        "[data-text-color-control], .inline-text-editor",
+      )
+    ) {
+      return;
+    }
+    onFinishColorInteraction(false);
+  }
 
   function editNumber(
-    property:
-      | "fontSize"
-      | "outlineWidth"
-      | "lineSpacing"
-      | "wrapWidth",
+    property: "fontSize" | "outlineWidth" | "lineSpacing" | "wrapWidth",
     value: string,
     minimum: number,
   ) {
     const number = Number(value);
-    if (Number.isFinite(number)) onEdit({ [property]: Math.max(minimum, number) });
+    if (Number.isFinite(number))
+      onEdit({ [property]: Math.max(minimum, number) });
   }
 
   return (
     <div className="text-controls" role="toolbar" aria-label="Text formatting">
-      <label>
-        Font
-        <select
-          value={layer.fontFamily}
-          onChange={(event) => onEdit({ fontFamily: event.target.value })}
-        >
-          {FONT_FAMILIES.map((font) => (
-            <option key={font}>{font}</option>
-          ))}
-        </select>
-      </label>
+      <NativeSelect
+        className="text-font-field"
+        label="Font"
+        size="xs"
+        data={FONT_FAMILIES}
+        value={layer.fontFamily}
+        onChange={(event) => onEdit({ fontFamily: event.target.value })}
+      />
       <label>
         Size
         <input
@@ -318,6 +338,64 @@ function TextControls({
           onChange={(event) => onEdit({ outlineColor: event.target.value })}
         />
       </label>
+      <label className="check-option">
+        <input
+          type="checkbox"
+          aria-label="Text shadow"
+          checked={Boolean(layer.shadow)}
+          onChange={(event) =>
+            onEdit({
+              shadow: event.target.checked
+                ? { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" }
+                : undefined,
+            })
+          }
+        />
+        Shadow
+      </label>
+      {layer.shadow ? (
+        <>
+          {(["offsetX", "offsetY", "blur"] as const).map((property) => (
+            <label key={property}>
+              {property === "blur"
+                ? "Shadow blur"
+                : property === "offsetX"
+                  ? "Shadow X"
+                  : "Shadow Y"}
+              <input
+                type="number"
+                min={property === "blur" ? 0 : undefined}
+                step="1"
+                value={layer.shadow![property]}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isFinite(value)) {
+                    onEdit({
+                      shadow: {
+                        ...layer.shadow!,
+                        [property]:
+                          property === "blur" ? Math.max(0, value) : value,
+                      },
+                    });
+                  }
+                }}
+              />
+            </label>
+          ))}
+          <label>
+            Shadow color
+            <input
+              type="color"
+              value={layer.shadow.color}
+              onChange={(event) =>
+                onEdit({
+                  shadow: { ...layer.shadow!, color: event.target.value },
+                })
+              }
+            />
+          </label>
+        </>
+      ) : null}
       <label>
         Spacing
         <input
@@ -341,41 +419,113 @@ function TextControls({
       </label>
       <span className="toolbar-divider" />
       <div className="selection-colors" aria-label="Selection colors">
-        {Object.entries(TEXT_COLOR_PRESETS).map(([preset, presetDetails]) => (
-          <button
-            type="button"
-            className="color-preset"
+        <Combobox
+          store={colorCombobox}
+          size="xs"
+          onOptionSubmit={(value) => {
+            setColorPreset(value);
+            colorCombobox.closeDropdown();
+            if (value === "custom") {
+              colorCombobox.focusTarget();
+              return;
+            }
+            const preset =
+              TEXT_COLOR_PRESETS[value as keyof typeof TEXT_COLOR_PRESETS];
+            if (!preset) return;
+            onBeginColorInteraction();
+            onApplyColor(preset.color);
+            onFinishColorInteraction();
+          }}
+        >
+          <Combobox.Target targetType="button">
+            <InputBase
+              component="button"
+              type="button"
+              className="text-color-field"
+              label="Text color"
+              size="xs"
+              pointer
+              data-text-color-control
+              disabled={!canColorSelection}
+              rightSection={<Combobox.Chevron />}
+              rightSectionPointerEvents="none"
+              onPointerDown={onBeginColorInteraction}
+              onKeyDown={onBeginColorInteraction}
+              onClick={() => colorCombobox.toggleDropdown()}
+              onBlur={(event) => {
+                colorCombobox.closeDropdown();
+                finishColorBlur(event);
+              }}
+            >
+              {selectedColor ? (
+                <span className="text-color-option">
+                  <span
+                    className="text-color-swatch"
+                    aria-hidden="true"
+                    style={{ backgroundColor: selectedColor.color }}
+                  />
+                  {selectedColor.label}
+                </span>
+              ) : (
+                <Input.Placeholder>Choose a color…</Input.Placeholder>
+              )}
+            </InputBase>
+          </Combobox.Target>
+          <Combobox.Dropdown
+            className="text-color-dropdown"
             data-text-color-control
-            disabled={!canColorSelection}
-            key={preset}
-            style={{ ["--preset" as string]: presetDetails.color }}
-            onPointerDown={(event) => event.preventDefault()}
-            onClick={() => {
-              onBeginColorInteraction();
-              onApplyColor(presetDetails.color);
-              onFinishColorInteraction();
-            }}
           >
-            <span className="color-swatch" />
-            {presetDetails.label}
-          </button>
-        ))}
-        <label>
-          Custom
-          <input
-            className="color-input"
-            data-text-color-control
-            type="color"
-            value={customColor}
-            disabled={!canColorSelection}
-            onPointerDown={onBeginColorInteraction}
-            onChange={(event) => {
-              setCustomColor(event.target.value);
-              onApplyColor(event.target.value);
-            }}
-            onBlur={onFinishColorInteraction}
-          />
-        </label>
+            <Combobox.Options>
+              {Object.entries(TEXT_COLOR_PRESETS).map(([value, preset]) => (
+                <Combobox.Option
+                  key={value}
+                  value={value}
+                  active={value === colorPreset}
+                >
+                  <span className="text-color-option">
+                    <span
+                      className="text-color-swatch"
+                      aria-hidden="true"
+                      style={{ backgroundColor: preset.color }}
+                    />
+                    {preset.label}
+                  </span>
+                </Combobox.Option>
+              ))}
+              <Combobox.Option value="custom" active={colorPreset === "custom"}>
+                <span className="text-color-option">
+                  <span
+                    className="text-color-swatch"
+                    aria-hidden="true"
+                    style={{ backgroundColor: customColor }}
+                  />
+                  Custom…
+                </span>
+              </Combobox.Option>
+            </Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
+        {colorPreset === "custom" ? (
+          <label>
+            Custom
+            <input
+              className="color-input"
+              data-text-color-control
+              type="color"
+              value={customColor}
+              disabled={!canColorSelection}
+              onPointerDown={onBeginColorInteraction}
+              onChange={(event) => {
+                setCustomColor(event.target.value);
+                onApplyColor(event.target.value);
+              }}
+              onBlur={finishColorBlur}
+            />
+          </label>
+        ) : null}
+        <p className="color-selection-hint">
+          Select text on the canvas to change its color.
+        </p>
       </div>
     </div>
   );
@@ -924,9 +1074,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     textColorEdit.pointerDown();
   }
 
-  function finishTextColorInteraction() {
+  function finishTextColorInteraction(restoreFocus = true) {
     textColorEdit.blur();
-    textEditor.current?.focus();
+    if (restoreFocus) textEditor.current?.focus();
+    else textEditor.current?.commit();
   }
 
   function cancelTextEditing() {
@@ -1663,6 +1814,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   <div className="tool-divider" />
                 <div className="composer">
                   <TextControls
+                    key={selectedTextLayer.id}
                     layer={selectedTextLayer}
                     canColorSelection={
                       editingTextLayerId === selectedTextLayer.id &&

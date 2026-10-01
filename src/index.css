@@ -439,6 +439,12 @@ button:disabled {
   min-height: 34px;
 }
 
+.tool-panel .check-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
+
 .stitch-panel {
   width: 100%;
 }
@@ -477,34 +483,8 @@ button:disabled {
 }
 
 .composer {
-  display: flex;
-  flex: 1;
+  width: 100%;
   min-width: 0;
-  align-items: center;
-  padding: 4px;
-  background: var(--field-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.composer .text-controls {
-  gap: 2px;
-  align-items: center;
-}
-
-.composer button,
-.composer select,
-.composer input:not([type="color"]) {
-  height: 28px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-}
-
-.composer button:hover:not(:disabled),
-.composer select:hover,
-.composer input:not([type="color"]):hover {
-  background: var(--field-hover);
 }
 
 .toolbar-divider {
@@ -553,31 +533,88 @@ button:disabled {
 }
 
 .text-controls {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   align-items: end;
+}
+
+.text-controls > label {
+  min-width: 0;
+}
+
+.text-font-field,
+.text-controls .check-option,
+.selection-colors {
+  grid-column: 1 / -1;
+}
+
+.text-controls .toolbar-divider {
+  display: none;
+}
+
+.tool-panel .text-controls input:not([type="range"]):not([type="file"]):not([type="checkbox"]),
+.tool-panel .text-controls select {
+  width: 100%;
+  height: 34px;
+  font-size: 13px;
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.tool-panel .text-controls select {
+  padding: 0 30px 0 10px;
+}
+
+.tool-panel .text-controls input[type="color"] {
+  padding: 4px;
 }
 
 .selection-colors {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: end;
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
-.color-preset {
+.color-selection-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tool-panel .text-color-field button {
+  width: 100%;
+  height: 34px;
+  justify-content: flex-start;
+  padding: 0 30px 0 10px;
+  color: var(--text);
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.text-color-option {
   display: inline-flex;
+  gap: 8px;
   align-items: center;
-  gap: 6px;
 }
 
-.color-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  background: var(--preset);
+.text-color-swatch {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 1px solid rgb(0 0 0 / 20%);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 20%);
+}
+
+.text-color-dropdown [role="listbox"] {
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .composer .color-input,
@@ -1026,6 +1063,7 @@ button.active-control {
   user-select: text;
   -webkit-text-fill-color: transparent;
   -webkit-text-stroke: 0;
+  text-shadow: none;
 }
 
 .canvas-size {

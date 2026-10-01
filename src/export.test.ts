@@ -117,6 +117,45 @@ test.each(["png", "webp", "jpeg"] as const)(
   },
 );
 
+test("exports draw a colored soft text shadow without leaking it into later image layers", async () => {
+  let project = addTextLayer(
+    setCanvasSize(openProject(), 100, 50),
+    "shadow",
+    { x: 10, y: 10 },
+    { text: "A", colorRuns: [] },
+  );
+  project = editTextLayer(project, "shadow", {
+    shadow: { offsetX: 6, offsetY: 6, blur: 2, color: "#ff00ff" },
+  });
+  project = addImageLayer(project, {
+    id: "after",
+    name: "Blue",
+    source: solidPng(0, 0, 255),
+    format: "image/png",
+    width: 1,
+    height: 1,
+  });
+  project = moveLayer(project, "after", 70, 15);
+  const image = await readPixels(
+    (await exportFlattened(project, { format: "png", quality: 80 })).bytes,
+  );
+  let shadowPixels = 0;
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    if (
+      image.data[offset] > 200 &&
+      image.data[offset + 1] < 40 &&
+      image.data[offset + 2] > 200 &&
+      image.data[offset + 3] > 100
+    )
+      shadowPixels++;
+  }
+  expect(shadowPixels).toBeGreaterThan(0);
+  const leakedOffset = (21 * 100 + 76) * 4;
+  expect(Array.from(image.data.slice(leakedOffset, leakedOffset + 4))).toEqual([
+    0, 0, 0, 0,
+  ]);
+});
+
 beforeAll(async () => {
   prepareExportEnvironment({
     createRaster(width, height) {

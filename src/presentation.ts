@@ -1,4 +1,4 @@
-import type { Project, TextLayer } from "./editor";
+import type { Project, TextLayer, TextShadow } from "./editor";
 
 export type Rectangle = {
   x: number;
@@ -45,6 +45,7 @@ export type TextLayerPresentation = {
   font: TextFontPresentation;
   lineHeight: number;
   outline: { width: number; color: string };
+  shadow?: TextShadow;
   lines: TextLinePresentation[];
 };
 
@@ -120,6 +121,7 @@ function presentTextLayer(
     font,
     lineHeight,
     outline: { width: layer.outlineWidth, color: layer.outlineColor },
+    ...(layer.shadow ? { shadow: layer.shadow } : {}),
     lines,
   };
 }
