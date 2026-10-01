@@ -1,4 +1,4 @@
-# Screenshot Editor
+# ShotMagic
 
 A local editor for composing screenshots, adding roleplay chat, and combining scenes into one image. Use it in your browser or as a Windows desktop app.
 
