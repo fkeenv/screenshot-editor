@@ -128,6 +128,53 @@ function loadEditorStyles() {
   document.head.append(style);
 }
 
+test("canvas background controls preview a saved color independently of appearance and support undo", async () => {
+  loadEditorStyles();
+  await mount();
+  await click("Properties");
+  const choice = container.querySelector<HTMLSelectElement>(
+    '[aria-label="Canvas background"]',
+  )!;
+  expect(choice).not.toBeNull();
+  await act(async () => {
+    choice.value = "solid";
+    choice.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const color = container.querySelector<HTMLInputElement>(
+    '[aria-label="Canvas background color"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(color, "#123456");
+    color.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const content = container.querySelector<HTMLElement>(".canvas-content")!;
+  expect(getComputedStyle(content).backgroundColor).toBe("rgb(18, 52, 86)");
+  document.documentElement.dataset.appearance = "dark";
+  expect(getComputedStyle(content).backgroundColor).toBe("rgb(18, 52, 86)");
+  expect((await openSavedProjectFromEditor()).canvasBackground).toEqual({
+    kind: "solid",
+    color: "#123456",
+  });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).canvasBackground).toEqual({
+    kind: "solid",
+    color: "#ffffff",
+  });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).canvasBackground).toEqual({
+    kind: "transparent",
+  });
+  expect(getComputedStyle(content).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(
+    stackedProject().layers,
+  );
+  await click("Export");
+  expect(container.textContent).toContain("#111827 for transparent projects");
+});
+
 test.each(["empty", "text-only"])(
   "both appearance modes show a transparency checkerboard for a %s canvas",
   async (content) => {

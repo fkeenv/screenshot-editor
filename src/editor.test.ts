@@ -26,12 +26,60 @@ import {
   replaceTextRange,
   scaleImageLayer,
   saveProject,
+  setCanvasBackground,
   setCanvasSize,
   setView,
   supportedImageFormat,
   TEXT_COLOR_PRESETS,
   undo,
 } from "./editor";
+
+test("canvas backgrounds are undoable without changing layers or view", () => {
+  const project = setView(projectWithImage(), 2, 15, -10);
+  const solid = setCanvasBackground(project, {
+    kind: "solid",
+    color: "#abcdef",
+  });
+  expect(solid.canvasBackground).toEqual({ kind: "solid", color: "#abcdef" });
+  expect(solid.layers).toEqual(project.layers);
+  expect([solid.zoom, solid.panX, solid.panY]).toEqual([2, 15, -10]);
+  expect(undo(solid).canvasBackground).toEqual({ kind: "transparent" });
+  expect(undo(solid).layers).toEqual(project.layers);
+  expect(redo(undo(solid)).canvasBackground).toEqual({
+    kind: "solid",
+    color: "#abcdef",
+  });
+});
+
+test("older project files default to transparent and new files preserve solid backgrounds", () => {
+  const legacy =
+    '{"version":1,"project":{"canvasWidth":800,"canvasHeight":600,"zoom":1,"panX":0,"panY":0,"layers":[]}}';
+  expect(openSavedProject(legacy).canvasBackground).toEqual({
+    kind: "transparent",
+  });
+  const project = setCanvasBackground(projectWithImage(), {
+    kind: "solid",
+    color: "#123456",
+  });
+  expect(openSavedProject(saveProject(project)).canvasBackground).toEqual({
+    kind: "solid",
+    color: "#123456",
+  });
+  expect(openSavedProject(saveProject(project)).layers).toEqual(project.layers);
+});
+
+test("invalid or unchanged background choices do not add history, and malformed saved backgrounds are rejected", () => {
+  const project = openProject();
+  expect(setCanvasBackground(project, { kind: "transparent" })).toBe(project);
+  expect(
+    setCanvasBackground(project, { kind: "solid", color: "rgba(1,2,3,0.5)" }),
+  ).toBe(project);
+  const serialized = JSON.parse(saveProject(project));
+  serialized.project.canvasBackground = { kind: "solid", color: "not-a-color" };
+  expect(() => openSavedProject(JSON.stringify(serialized))).toThrow(
+    "not a valid",
+  );
+});
 
 const TEST_IMAGE = {
   id: "image-1",

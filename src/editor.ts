@@ -340,7 +340,12 @@ export type TextLayerEdit = Partial<
   >
 >;
 
+export type CanvasBackground =
+  | { kind: "transparent" }
+  | { kind: "solid"; color: string };
+
 type Snapshot = {
+  canvasBackground: CanvasBackground;
   canvasWidth: number;
   canvasHeight: number;
   zoom: number;
@@ -356,7 +361,9 @@ export type Project = Snapshot & {
 
 type ProjectFile = {
   version: 1;
-  project: Snapshot;
+  project: Omit<Snapshot, "canvasBackground"> & {
+    canvasBackground?: CanvasBackground;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -426,9 +433,19 @@ function isTextLayer(value: unknown): value is TextLayer {
   );
 }
 
-function isSnapshot(value: unknown): value is Snapshot {
+function isCanvasBackground(value: unknown): value is CanvasBackground {
+  return isRecord(value) && (
+    value.kind === "transparent" ||
+    (value.kind === "solid" &&
+      typeof value.color === "string" && /^#[0-9a-f]{6}$/i.test(value.color))
+  );
+}
+
+function isSnapshot(value: unknown): value is ProjectFile["project"] {
   return (
     isRecord(value) &&
+    (value.canvasBackground === undefined ||
+      isCanvasBackground(value.canvasBackground)) &&
     isFiniteNumber(value.canvasWidth) &&
     value.canvasWidth > 0 &&
     isFiniteNumber(value.canvasHeight) &&
@@ -465,7 +482,12 @@ export function openSavedProject(serialized: string): Project {
   if (!isSnapshot(file.project)) {
     throw new Error("This is not a valid screenshot editor project.");
   }
-  return { ...file.project, past: [], future: [] };
+  return {
+    ...file.project,
+    canvasBackground: file.project.canvasBackground ?? { kind: "transparent" },
+    past: [],
+    future: [],
+  };
 }
 
 export function parseColoredText(rawText: string): TextContent {
@@ -532,6 +554,7 @@ export function supportedImageFormat(
 
 function snapshot(project: Project): Snapshot {
   return {
+    canvasBackground: project.canvasBackground,
     canvasWidth: project.canvasWidth,
     canvasHeight: project.canvasHeight,
     zoom: project.zoom,
@@ -594,6 +617,7 @@ function clamp(value: number, min: number, max: number): number {
 
 export function openProject(): Project {
   return {
+    canvasBackground: { kind: "transparent" },
     canvasWidth: 800,
     canvasHeight: 600,
     zoom: 1,
@@ -1111,6 +1135,20 @@ export function cropImageLayer(
       ? layer
       : { ...layer, crop: nextCrop };
   });
+}
+
+export function setCanvasBackground(
+  project: Project,
+  background: CanvasBackground,
+): Project {
+  if (!isCanvasBackground(background)) return project;
+  const current = project.canvasBackground;
+  if (
+    current.kind === background.kind &&
+    (current.kind === "transparent" ||
+      (background.kind === "solid" && current.color === background.color))
+  ) return project;
+  return commit(project, { ...snapshot(project), canvasBackground: background });
 }
 
 export function setCanvasSize(

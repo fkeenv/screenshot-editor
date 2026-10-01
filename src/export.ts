@@ -106,8 +106,9 @@ export async function exportFlattened(
   const raster = await createRaster(project.canvasWidth, project.canvasHeight);
   const context = raster.getContext("2d");
   if (!context) throw new Error("The canvas could not be exported.");
-  if (options.format === "jpeg") {
-    context.fillStyle = JPEG_BACKGROUND;
+  if (project.canvasBackground.kind === "solid" || options.format === "jpeg") {
+    context.fillStyle = project.canvasBackground.kind === "solid"
+      ? project.canvasBackground.color : JPEG_BACKGROUND;
     context.fillRect(0, 0, project.canvasWidth, project.canvasHeight);
   }
   await paintLayers(context, project);
@@ -150,6 +151,10 @@ export async function exportStitch(
     context.rect(0, offsetY, project.canvasWidth, project.canvasHeight);
     context.clip();
     try {
+      if (project.canvasBackground.kind === "solid") {
+        context.fillStyle = project.canvasBackground.color;
+        context.fillRect(0, offsetY, project.canvasWidth, project.canvasHeight);
+      }
       await paintLayers(context, project, offsetY);
     } finally {
       context.restore();
