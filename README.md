@@ -1,30 +1,32 @@
 # ShotMagic
 
-A local editor for composing screenshots, adding roleplay chat, and combining scenes into one image. Use it in your browser or as a Windows desktop app.
+ShotMagic is an editor for your **GTA roleplay screenshots**. Import a scene, add your chat log, adjust the layout, and turn it into a finished image to share with your roleplay community.
 
-Start with a screenshot or a blank canvas, arrange images, text, and rectangles as layers, then save an editable project or export the finished picture. Image processing happens on your device; your screenshots are not uploaded to a server.
+Whether you're documenting your character's story, sharing a memorable interaction, or preparing a forum post, ShotMagic keeps screenshot and chat editing in one workspace. Crop out distractions, format dialogue and roleplay actions, and stitch several scenes into a single image.
+
+Use ShotMagic in your browser or as a Windows desktop app. Start with a screenshot or a blank canvas, arrange images, text, and rectangles as layers, then save an editable project or export the finished picture. Image processing happens on your device; your screenshots are not uploaded to a server.
 
 ## Features
 
 - **Images:** import JPG, PNG, WebP, GIF, or BMP files. Paste or drag and drop an image, move it, resize it proportionally, or edit its position numerically. Only the first image is imported at a time.
 - **Cropping:** drag corner and edge handles to crop an image. Pan, zoom, or use Fit image to reach the edges of long screenshots. Apply or cancel without losing the original source image.
-- **Roleplay chat:** type or paste chat logs and place them on the canvas. Common chat lines receive matching colors automatically. Named color presets include visible swatches.
+- **GTA roleplay chat:** type or paste chat logs and place them over your screenshots. Recognized dialogue and action lines receive matching roleplay colors automatically. Choose named presets such as `/me`, `/do`, speech, whisper, and radio, with visible color swatches.
 - **Text editing:** edit text directly on the canvas and adjust font, size, bold, color, outline, shadow, line spacing, and text-box width.
 - **Rectangles:** add simple shapes with editable fill, size, position, and opacity.
 - **Layers:** select, rename, reorder, hide, duplicate, or delete layers. Undo and redo edits.
 - **Alignment:** show an adjustable grid and enable grid snapping. Snap layers to canvas center, edges, corners, or padded corners, with labeled guides while dragging. Padding defaults to 16px; hold Shift to bypass snapping.
 - **Canvas and appearance:** choose preset or custom dimensions, a transparent or solid background, and light, dark, or system appearance. Hide the inspector or Layers panel for more room.
-- **Projects and exports:** save editable projects, export PNG/JPG/WebP images, or combine two or more saved projects into a vertical stitch.
+- **Scenes and stories:** save editable projects, export PNG/JPG/WebP images to share, or combine two or more saved scenes into a vertical stitch.
 
 Grid lines, alignment guides, selection borders, and text highlights are editing aids only. They do not appear in exports.
 
-## Your first project
+## Edit your first GTA roleplay screenshot
 
-1. Choose a screenshot, paste or drop an image, or select **Start blank**.
-2. Add chat through the **Chat** tab, then choose **Place on canvas** and click where the text should go. Use the rectangle tool to add a shape.
+1. Import your GTA roleplay screenshot, paste or drop it into ShotMagic, or select **Start blank** to create a composition from scratch.
+2. Paste your scene's chat log into the **Chat** tab, then choose **Place on canvas** and click where the text should go. Adjust the chat's formatting in Properties and use the rectangle tool when you need a simple shape.
 3. Select a layer to edit it in **Properties**. Use **Layers** to change visibility and order.
 4. Enable **Grid**, **Snap**, or **Guides** when you need help with alignment. Adjust grid spacing and snap padding in Properties.
-5. Choose **Save** to keep an editable `.screenshot-project.json` file. Choose **Export** for a finished image.
+5. Choose **Save** to keep an editable `.screenshot-project.json` file. Choose **Export** for a finished image, or use **Stitch** to combine several saved scenes into one story.
 
 Double-click text to edit it. Clicking the empty workspace outside the canvas finishes editing and deselects layers. Save your project before closing; exporting an image does not replace saving the editable project.
 
