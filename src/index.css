@@ -467,12 +467,22 @@ button.active-control {
   outline-offset: 1px;
 }
 
+.canvas-grid {
+  background-image:
+    linear-gradient(to right, rgb(0 0 0 / 35%) 1px, rgb(255 255 255 / 35%) 1px, rgb(255 255 255 / 35%) 2px, transparent 2px),
+    linear-gradient(to bottom, rgb(0 0 0 / 35%) 1px, rgb(255 255 255 / 35%) 1px, rgb(255 255 255 / 35%) 2px, transparent 2px);
+}
+
+.main-toolbar button[aria-pressed="true"] {
+  @apply border-accent text-accent;
+}
+
 .image-layer img {
   @apply absolute max-w-none pointer-events-none select-none;
 }
 
 .image-crop-toolbar {
-  @apply absolute z-20 top-[16px] left-1/2 flex items-center gap-[10px] py-[10px] px-[14px] border-[1px] border-solid border-stroke-strong rounded-[10px] text-editor bg-chrome whitespace-nowrap;
+  @apply absolute z-20 top-[16px] left-1/2 flex flex-wrap justify-center max-w-[calc(100%_-_32px)] items-center gap-[10px] py-[10px] px-[14px] border-[1px] border-solid border-stroke-strong rounded-[10px] text-editor bg-chrome whitespace-nowrap;
   transform: translateX(-50%);
   box-shadow: 0 6px 24px rgb(0 0 0 / 20%);
 }

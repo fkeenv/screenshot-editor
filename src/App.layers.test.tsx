@@ -150,6 +150,100 @@ function loadEditorStyles() {
   document.head.append(style);
 }
 
+test("grid controls change an editor-only overlay without changing the saved project or history", async () => {
+  loadEditorStyles();
+  const project = stackedProject();
+  await mount(project);
+  expect(container.querySelector(".canvas-grid")).toBeNull();
+  await click("Show grid");
+  const grid = container.querySelector<HTMLElement>(".canvas-grid")!;
+  expect(grid.style.backgroundSize).toBe("20px 20px");
+  expect(grid.getAttribute("aria-hidden")).toBe("true");
+  expect(getComputedStyle(grid).pointerEvents).toBe("none");
+  await click("Snap to grid");
+  expect(button("Snap to grid").getAttribute("aria-pressed")).toBe("true");
+  await click("Properties");
+  const spacing = container.querySelector<HTMLInputElement>('[aria-label="Grid spacing"]')!;
+  await act(async () => {
+    spacing.focus();
+    spacing.value = "32";
+    spacing.blur();
+  });
+  expect(grid.style.backgroundSize).toBe("32px 32px");
+  const nextSpacing = container.querySelector<HTMLInputElement>('[aria-label="Grid spacing"]')!;
+  await act(async () => {
+    nextSpacing.focus();
+    nextSpacing.value = "0";
+    nextSpacing.blur();
+  });
+  expect(nextSpacing.value).toBe("32");
+  expect(await openSavedProjectFromEditor()).toEqual(openSavedProject(saveProject(project)));
+  expect(button("Undo").disabled).toBe(true);
+  await click("Show grid");
+  expect(container.querySelector(".canvas-grid")).toBeNull();
+});
+
+test.each([
+  ["image", 0.5], ["image", 2], ["text", 0.5], ["text", 2],
+  ["rectangle", 0.5], ["rectangle", 2],
+] as const)("%s dragging snaps to document grid at zoom %s with one undo step", async (kind, zoom) => {
+  let project = kind === "image"
+    ? addImageLayer(openProject(), { id: "layer", name: "Image", source: "data:image/png;base64,image", format: "image/png", width: 100, height: 50 })
+    : kind === "text" ? addTextLayer(openProject(), "layer")
+    : addRectangleLayer(openProject(), "layer");
+  project = setView(moveLayer(project, "layer", 13, 17), zoom, 50, -20);
+  await mount(project);
+  await click("Snap to grid");
+  const layer = container.querySelector(`.${kind}-layer`)!;
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointermove", 100 + 23 * zoom, 100 + 12 * zoom);
+  await pointer(layer, "pointerup", 100 + 23 * zoom, 100 + 12 * zoom);
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x: 40, y: 20 });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+  expect(button("Undo").disabled).toBe(true);
+});
+
+test("snap preserves click-only selection, can be bypassed with Shift, and cancels on pointercancel", async () => {
+  const project = moveLayer(addRectangleLayer(openProject(), "layer"), "layer", 13, 17);
+  await mount(project);
+  await click("Snap to grid");
+  const layer = container.querySelector(".rectangle-layer")!;
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointerup", 100, 100);
+  expect(button("Undo").disabled).toBe(true);
+  await pointer(layer, "pointerdown", 100, 100);
+  const up = new MouseEvent("pointerup", { bubbles: true, clientX: 123, clientY: 112, shiftKey: true });
+  Object.defineProperty(up, "pointerId", { value: 1 });
+  await act(async () => layer.dispatchEvent(up));
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x: 36, y: 29 });
+  await click("Undo");
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointermove", 123, 112);
+  await pointer(layer, "pointercancel", 123, 112);
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+});
+
+test("text placement snaps in document pixels while grid lines remain outside project data", async () => {
+  await mount(setView(openProject(), 2, 50, -20));
+  await click("Snap to grid");
+  await click("Chat");
+  const draft = container.querySelector<HTMLTextAreaElement>('[aria-label="Chat draft"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(draft, "A caption");
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Place on canvas");
+  const canvas = container.querySelector(".canvas")!;
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 100, top: 50 } as DOMRect);
+  await pointer(canvas, "pointerdown", 173, 99);
+  const savedProject = await openSavedProjectFromEditor();
+  expect(savedProject.layers[0]).toMatchObject({ kind: "text", x: 40, y: 20 });
+  expect(savedProject).not.toHaveProperty("gridSpacing");
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(0);
+});
+
 test("rectangle tool adds a selected editable layer and supports size, color, duplicate, delete and undo", async () => {
   await mount(openProject());
   await click("Add rectangle");

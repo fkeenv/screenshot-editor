@@ -80,6 +80,7 @@ import { ImageCrop } from "./ImageCrop";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
 import { RectangleControls } from "./RectangleControls";
+import { snapToGrid } from "./grid";
 import {
   prepareImageImport,
   transferredImage,
@@ -568,6 +569,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     content: TextContent;
   }>();
   const [placingText, setPlacingText] = useState(false);
+  const [gridVisible, setGridVisible] = useState(false);
+  const [gridSnapping, setGridSnapping] = useState(false);
+  const [gridSpacing, setGridSpacing] = useState(20);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
@@ -575,7 +579,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [imageCrop, setImageCrop] = useState<{
     layer: ImageLayer;
     crop: ImageLayer["crop"];
+    view: { zoom: number; panX: number; panY: number };
   }>();
+  const view = imageCrop?.view ?? project;
   const textEditor = useRef<TextEditorHandle | null>(null);
   const chatDraftRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -900,7 +906,48 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     if (!selectedImageLayer) return;
     resetTextEditing();
     setPlacingText(false);
-    setImageCrop({ layer: selectedImageLayer, crop: { ...selectedImageLayer.crop } });
+    setImageCrop({
+      layer: selectedImageLayer,
+      crop: { ...selectedImageLayer.crop },
+      view: { zoom: project.zoom, panX: project.panX, panY: project.panY },
+    });
+  }
+
+  function zoomImageCrop(factor: number) {
+    setImageCrop((current) => {
+      if (!current) return current;
+      const zoom = Math.min(16, Math.max(0.00001, current.view.zoom * factor));
+      const ratio = zoom / current.view.zoom;
+      return {
+        ...current,
+        view: {
+          zoom,
+          panX: current.view.panX * ratio,
+          panY: current.view.panY * ratio,
+        },
+      };
+    });
+  }
+
+  function fitImageCrop() {
+    const viewport = viewportRef.current;
+    if (!viewport || !imageCrop) return;
+    const { layer } = imageCrop;
+    const width = layer.crop.width * layer.scale;
+    const height = layer.crop.height * layer.scale;
+    const zoom = Math.min(
+      (viewport.clientWidth - 96) / width,
+      (viewport.clientHeight - 160) / height,
+    );
+    if (zoom <= 0) return;
+    setImageCrop((current) => current ? {
+      ...current,
+      view: {
+        zoom,
+        panX: (project.canvasWidth / 2 - layer.x - width / 2) * zoom,
+        panY: (project.canvasHeight / 2 - layer.y - height / 2) * zoom + 32,
+      },
+    } : current);
   }
 
   function applyImageCrop() {
@@ -909,7 +956,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setImageCrop(undefined);
   }
 
-  function placeTextBox(event: { clientX: number; clientY: number }) {
+  function placeTextBox(event: { clientX: number; clientY: number; shiftKey?: boolean }) {
     if (!hasDraftText) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -922,7 +969,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     const id = crypto.randomUUID();
-    setProject((current) => addTextLayer(current, id, { x, y }, draftContent));
+    const position = gridSnapping && !event.shiftKey
+      ? { x: snapToGrid(x, gridSpacing), y: snapToGrid(y, gridSpacing) }
+      : { x, y };
+    setProject((current) => addTextLayer(current, id, position, draftContent));
     setSelectedLayerId(id);
     resetTextEditing();
     setChatDraft("");
@@ -1109,17 +1159,28 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (placingText || imageCrop) return;
+    if (placingText || event.button !== 0) return;
     const viewport = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
-    const originX = project.panX;
-    const originY = project.panY;
+    const originX = view.panX;
+    const originY = view.panY;
     const gesture = beginUndoableEdit(project);
     viewport.setPointerCapture(event.pointerId);
 
+    function updateCropPan(panX: number, panY: number) {
+      setImageCrop((current) => current ? {
+        ...current,
+        view: { ...current.view, panX, panY },
+      } : current);
+    }
+
     function onMove(move: globalThis.PointerEvent) {
-      if (move.buttons === 0) return;
+      if (move.buttons === 0 || move.pointerId !== event.pointerId) return;
+      if (imageCrop) {
+        updateCropPan(originX + move.clientX - startX, originY + move.clientY - startY);
+        return;
+      }
       setProject(
         gesture.preview({
           type: "pan-viewport",
@@ -1130,7 +1191,15 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     function onUp(up: globalThis.PointerEvent) {
+      if (up.pointerId !== event.pointerId) return;
       removeListeners();
+      if (imageCrop) {
+        updateCropPan(
+          up.type === "pointercancel" ? originX : originX + up.clientX - startX,
+          up.type === "pointercancel" ? originY : originY + up.clientY - startY,
+        );
+        return;
+      }
       if (up.type === "pointercancel") {
         setProject(gesture.cancel());
         return;
@@ -1188,14 +1257,23 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     const gesture = beginUndoableEdit(project);
     element.setPointerCapture(event.pointerId);
 
+    function position(move: globalThis.PointerEvent) {
+      const x = originX + (move.clientX - startX) / zoom;
+      const y = originY + (move.clientY - startY) / zoom;
+      if (gridSnapping && !move.shiftKey &&
+        (move.clientX !== startX || move.clientY !== startY)) {
+        return { x: snapToGrid(x, gridSpacing), y: snapToGrid(y, gridSpacing) };
+      }
+      return { x, y };
+    }
+
     function onMove(move: globalThis.PointerEvent) {
       if (move.buttons === 0) return;
       setProject(
         gesture.preview({
           type: "move-layer",
           layerId: layer.id,
-          x: originX + (move.clientX - startX) / zoom,
-          y: originY + (move.clientY - startY) / zoom,
+          ...position(move),
         }),
       );
     }
@@ -1211,8 +1289,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         gesture.finish({
           type: "move-layer",
           layerId: layer.id,
-          x: originX + (up.clientX - startX) / zoom,
-          y: originY + (up.clientY - startY) / zoom,
+          ...position(up),
         }),
       );
     }
@@ -1431,6 +1508,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             <button type="button" className="fit-button" aria-label="Fit canvas to stage" onClick={fitCanvas}>Fit</button>
           </div>
           <div className="toolbar-group toolbar-end ml-auto">
+            <button type="button" aria-label="Show grid" aria-pressed={gridVisible}
+              onClick={() => setGridVisible((visible) => !visible)}>Grid</button>
+            <button type="button" aria-label="Snap to grid" aria-pressed={gridSnapping}
+              title="Snap layer drags and text placement. Hold Shift to bypass."
+              onClick={() => setGridSnapping((snapping) => !snapping)}>Snap</button>
             <button
               type="button"
               onClick={() => {
@@ -1764,6 +1846,38 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 </label>
               </div>
 
+              <div className="control-group flex flex-wrap gap-[8px] items-end">
+                <label>
+                  Grid spacing (px)
+                  <input
+                    key={gridSpacing}
+                    type="number"
+                    min="1"
+                    max="512"
+                    step="1"
+                    aria-label="Grid spacing"
+                    defaultValue={gridSpacing}
+                    onBlur={(event) => {
+                      const spacing = Number(event.currentTarget.value);
+                      if (Number.isInteger(spacing) && spacing >= 1 && spacing <= 512) {
+                        setGridSpacing(spacing);
+                      } else event.currentTarget.value = String(gridSpacing);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.currentTarget.value = String(gridSpacing);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </label>
+                <p className="tool-hint">Grid and snapping are editing aids, not part of your export. Hold Shift while dragging to bypass snapping.</p>
+              </div>
+
               {selectedLayer ? (
                 <>
                   <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
@@ -1946,6 +2060,12 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               <strong>Crop image</strong>
               <span role="status">{imageCrop.crop.width} × {imageCrop.crop.height} px</span>
             </div>
+            <span className="inline-flex items-center gap-[6px]">
+              <button type="button" aria-label="Zoom out crop" onClick={() => zoomImageCrop(1 / 1.25)}>−</button>
+              <output className="min-w-[40px] text-center text-[12px]">{Math.round(view.zoom * 100)}%</output>
+              <button type="button" aria-label="Zoom in crop" onClick={() => zoomImageCrop(1.25)}>+</button>
+              <button type="button" aria-label="Fit image for crop" onClick={fitImageCrop}>Fit image</button>
+            </span>
             <button type="button" onClick={() => setImageCrop(undefined)}>Cancel</button>
             <button type="button" className="primary-action" autoFocus onClick={applyImageCrop}>Apply</button>
           </div>
@@ -1977,8 +2097,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         <div
           className="canvas-anchor"
           style={{
-            width: project.canvasWidth * project.zoom,
-            height: project.canvasHeight * project.zoom,
+            width: project.canvasWidth * view.zoom,
+            height: project.canvasHeight * view.zoom,
           }}
         >
         <div
@@ -1992,7 +2112,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           style={{
             width: project.canvasWidth,
             height: project.canvasHeight,
-            transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
+            transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
           }}
         >
           <div
@@ -2130,6 +2250,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 );
               })}
           </div>
+          {gridVisible && !imageCrop ? (
+            <div
+              className="canvas-grid absolute inset-0 z-1 pointer-events-none"
+              aria-hidden="true"
+              style={{ backgroundSize: `${gridSpacing}px ${gridSpacing}px` }}
+            />
+          ) : null}
           {selectedImageLayer?.visible && !imageCrop && !placingText ? (
               <ImageResizeHandles
                 layer={selectedImageLayer}
@@ -2143,7 +2270,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             <ImageCrop
               layer={imageCrop.layer}
               crop={imageCrop.crop}
-              zoom={project.zoom}
+              zoom={view.zoom}
               onChange={(crop) => setImageCrop((current) => current ? { ...current, crop } : current)}
             />
           ) : null}

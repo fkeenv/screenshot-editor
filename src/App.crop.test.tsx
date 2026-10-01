@@ -152,6 +152,97 @@ test("crop is unavailable without an image selection and can be entered from the
   expect(button("Cancel")).toBeDefined();
 });
 
+test.each([".viewport", ".image-crop-overlay"])(
+  "crop mode allows panning from %s without changing crop pixels or history",
+  async (selector) => {
+    const project = addImageLayer(openProject(), {
+      id: "tall",
+      name: "Tall image",
+      format: "image/png",
+      source: "data:image/png;base64,example",
+      width: 320,
+      height: 2600,
+    });
+    await mount(project);
+    await openImageAndStartCrop();
+    const target = container.querySelector(selector)!;
+    await pointer(target, "pointerdown", 100, 400);
+    await pointer(target, "pointermove", 100, 100);
+    await pointer(target, "pointerup", 100, 100);
+    expect(
+      container.querySelector<HTMLElement>(".canvas")!.style.transform,
+    ).toBe("translate(0px, -300px) scale(1)");
+    expect(container.querySelector('[role="status"]')!.textContent).toBe(
+      "320 × 2600 px",
+    );
+    await click("Cancel");
+    expect(await savedProject()).toEqual(
+      openSavedProject(saveProject(project)),
+    );
+    expect(button("Undo").disabled).toBe(true);
+  },
+);
+
+test("crop Fit shows the entire image rather than only the canvas, and zoom leaves redo history intact", async () => {
+  await mount(
+    addImageLayer(openProject(), {
+      id: "tall",
+      name: "Tall image",
+      format: "image/png",
+      source: "data:image/png;base64,example",
+      width: 320,
+      height: 2600,
+    }),
+  );
+  await openImageAndStartCrop();
+  const viewport = container.querySelector(".viewport")!;
+  Object.defineProperty(viewport, "clientWidth", { value: 1000 });
+  Object.defineProperty(viewport, "clientHeight", { value: 800 });
+  await click("Fit image for crop");
+  expect(container.querySelector<HTMLElement>(".canvas")!.style.transform).toBe(
+    "translate(59.07692307692308px, -214.15384615384616px) scale(0.24615384615384617)",
+  );
+  await click("Zoom in crop");
+  expect(
+    container.querySelector<HTMLElement>(".canvas")!.style.transform,
+  ).toContain("scale(0.3076923076923077)");
+  await click("Zoom out crop");
+  const handle = button("Crop right");
+  await pointer(handle, "pointerdown", 100, 100);
+  await pointer(handle, "pointerup", 80, 100);
+  await click("Apply");
+  expect((await savedProject()).layers[0]).toMatchObject({
+    crop: { width: 239, height: 2600 },
+  });
+  await click("Undo");
+  expect(button("Undo").disabled).toBe(true);
+  expect(button("Redo").disabled).toBe(false);
+  await click("Crop image");
+  await click("Fit image for crop");
+  await click("Cancel");
+  expect(button("Undo").disabled).toBe(true);
+  expect(button("Redo").disabled).toBe(false);
+  await click("Redo");
+  expect((await savedProject()).layers[0]).toMatchObject({
+    crop: { width: 239, height: 2600 },
+  });
+});
+
+test("cancelling a crop pan restores the temporary view without moving the image", async () => {
+  await mount();
+  await openImageAndStartCrop();
+  const overlay = container.querySelector(".image-crop-overlay")!;
+  await pointer(overlay, "pointerdown", 100, 400);
+  await pointer(overlay, "pointermove", 200, 100);
+  await pointer(overlay, "pointercancel", 200, 100);
+  expect(container.querySelector<HTMLElement>(".canvas")!.style.transform).toBe(
+    "translate(18px, -12px) scale(0.5)",
+  );
+  await click("Apply");
+  expect((await savedProject()).layers[0]).toEqual(imageProject().layers[0]);
+  expect(button("Undo").disabled).toBe(true);
+});
+
 test("dragging previews a source-pixel crop, Apply commits once, and undo/redo preserve the image frame", async () => {
   await mount();
   await openImageAndStartCrop();

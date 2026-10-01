@@ -77,7 +77,6 @@ export function ImageCrop({ layer, crop, zoom, onChange }: ImageCropProps) {
           ["--crop-zoom"]: zoom,
         } as CSSProperties
       }
-      onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="image-crop-preview absolute inset-0 overflow-hidden">
         <img
