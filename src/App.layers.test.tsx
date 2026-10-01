@@ -270,6 +270,26 @@ test("external drop shows feedback and imports without navigating; unrelated dro
   expect((await openSavedProjectFromEditor()).layers).toHaveLength(4);
 });
 
+test("unsupported first image is accepted for an error, without valid-drop feedback for a later image", async () => {
+  await mount();
+  const viewport = container.querySelector<HTMLElement>(".viewport")!;
+  const transfer = {
+    files: [],
+    types: ["Files"],
+    dropEffect: "none",
+    items: [
+      { kind: "file", type: "image/svg+xml", getAsFile: () => null },
+      { kind: "file", type: "image/png", getAsFile: () => null },
+    ],
+  };
+  const event = new Event("dragover", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: transfer });
+  await act(async () => viewport.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(transfer.dropEffect).toBe("copy");
+  expect(viewport.textContent).not.toContain("Drop screenshot here");
+});
+
 test.each(["paste", "drop"])(
   "invalid %s images leave selection, project and history intact",
   async (delivery) => {

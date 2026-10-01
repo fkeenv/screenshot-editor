@@ -1,6 +1,9 @@
 import { supportedImageFormat, type ImageFormat } from "./editor";
 import type { PickedFile } from "./file-workflow";
 
+export const UNSUPPORTED_IMAGE_MESSAGE =
+  "Choose a JPG, PNG, WebP, GIF, or BMP image.";
+
 export function transferredImage(transfer: DataTransfer): File | undefined {
   const files = Array.from(transfer.files ?? []);
   if (!files.length) {
@@ -22,7 +25,7 @@ export async function prepareImageImport(file: PickedFile | File) {
     file.name,
     file instanceof File ? file.type : (file.mediaType ?? ""),
   );
-  if (!format) throw new Error("Choose a JPG, PNG, WebP, GIF, or BMP image.");
+  if (!format) throw new Error(UNSUPPORTED_IMAGE_MESSAGE);
   const blob =
     file instanceof File
       ? file.slice(0, file.size, format)

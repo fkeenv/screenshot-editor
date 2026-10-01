@@ -72,7 +72,11 @@ import { PresentedText } from "./PresentedText";
 import { ImageCrop } from "./ImageCrop";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
-import { prepareImageImport, transferredImage } from "./image-intake";
+import {
+  prepareImageImport,
+  transferredImage,
+  UNSUPPORTED_IMAGE_MESSAGE,
+} from "./image-intake";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -549,7 +553,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   async function receiveImage(file: PickedFile | File) {
     try {
       const image = await prepareImageImport(file);
-      for (const layerId of [...layerInteractions.current.keys()]) cancelLayerInteractions(layerId);
+      for (const layerId of [...layerInteractions.current.keys()]) {
+        cancelLayerInteractions(layerId);
+      }
       const id = crypto.randomUUID();
       setProject((current) =>
         addImageLayer(current, {
@@ -574,13 +580,19 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       const [file] = await files.importImages();
       if (file) await receiveImage(file);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "The image could not be imported.");
+      setImportError(
+        error instanceof Error ? error.message : "The image could not be imported.",
+      );
     }
   }
 
   useEffect(() => {
     function onPaste(event: ClipboardEvent) {
-      if (imageCrop || (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]"))) return;
+      if (
+        imageCrop ||
+        (event.target instanceof Element &&
+          event.target.closest("input, textarea, select, [contenteditable]"))
+      ) return;
       const file = event.clipboardData && transferredImage(event.clipboardData);
       if (!file) return;
       event.preventDefault();
@@ -1640,14 +1652,23 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           if (!Array.from(event.dataTransfer.types).includes("Files")) return;
           event.preventDefault();
           const file = transferredImage(event.dataTransfer);
-          const valid = !imageCrop && (file
-            ? Boolean(supportedImageFormat(file.name, file.type))
-            : Array.from(event.dataTransfer.items).some((item) => item.kind === "file" && (!item.type || Boolean(supportedImageFormat("", item.type)))));
-          event.dataTransfer.dropEffect = valid ? "copy" : "none";
+          const item = Array.from(event.dataTransfer.items).find(
+            (candidate) => candidate.kind === "file" &&
+              (!candidate.type || candidate.type.startsWith("image/")),
+          );
+          const valid = !imageCrop && (
+            file
+              ? Boolean(supportedImageFormat(file.name, file.type))
+              : Boolean(item && (!item.type || supportedImageFormat("", item.type)))
+          );
+          event.dataTransfer.dropEffect = imageCrop ? "none" : "copy";
           setImageDropActive(valid);
         }}
         onDragLeave={(event) => {
-          if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setImageDropActive(false);
+          if (
+            !(event.relatedTarget instanceof Node) ||
+            !event.currentTarget.contains(event.relatedTarget)
+          ) setImageDropActive(false);
         }}
         onDrop={(event) => {
           if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -1656,10 +1677,15 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           if (imageCrop) return;
           const file = transferredImage(event.dataTransfer);
           if (file) void receiveImage(file);
-          else setImportError("Choose a JPG, PNG, WebP, GIF, or BMP image.");
+          else setImportError(UNSUPPORTED_IMAGE_MESSAGE);
         }}
       >
-        {imageDropActive ? <div className="image-drop-target" role="status">Drop screenshot here<span>Only the first image is imported.</span></div> : null}
+        {imageDropActive ? (
+          <div className="image-drop-target" role="status">
+            Drop screenshot here
+            <span>Only the first image is imported.</span>
+          </div>
+        ) : null}
         {imageCrop ? (
           <div className="image-crop-toolbar" role="toolbar" aria-label="Crop actions" onPointerDown={(event) => event.stopPropagation()}>
             <div>
