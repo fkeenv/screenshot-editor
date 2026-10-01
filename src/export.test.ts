@@ -36,9 +36,7 @@ beforeAll(async () => {
   const { init: initWebp } = await import("@jsquash/webp/encode");
   prepareExportCodecs(async () => {
     await initPng(
-      await readFile(
-        require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
-      ),
+      await readFile(require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm")),
     );
     await initJpeg({
       wasmBinary: await readFile(
@@ -161,8 +159,12 @@ test("export produces a jpeg and a webp of the canvas", async () => {
   expect(jpeg.mediaType).toBe("image/jpeg");
   expect(webp.mediaType).toBe("image/webp");
   expect(Array.from(jpeg.bytes.slice(0, 2))).toEqual([0xff, 0xd8]);
-  expect(Array.from(webp.bytes.slice(0, 4))).toEqual([0x52, 0x49, 0x46, 0x46]);
-  expect(Array.from(webp.bytes.slice(8, 12))).toEqual([0x57, 0x45, 0x42, 0x50]);
+  expect(Array.from(webp.bytes.slice(0, 4))).toEqual([
+    0x52, 0x49, 0x46, 0x46,
+  ]);
+  expect(Array.from(webp.bytes.slice(8, 12))).toEqual([
+    0x57, 0x45, 0x42, 0x50,
+  ]);
   const jpegImage = await readPixels(jpeg.bytes);
   const webpImage = await readPixels(webp.bytes);
   expect(jpegImage.width).toBe(3);
@@ -191,10 +193,7 @@ test("export paints an image layer onto the canvas", async () => {
   });
   project = moveLayer(project, "image-1", 1, 0);
 
-  const exported = await exportFlattened(project, {
-    format: "png",
-    quality: 80,
-  });
+  const exported = await exportFlattened(project, { format: "png", quality: 80 });
   const image = await readPixels(exported.bytes);
 
   expect(Array.from(image.data.slice(4, 8))).toEqual([255, 0, 0, 255]);
@@ -230,14 +229,8 @@ test("lowering quality makes the jpeg and webp smaller", async () => {
     height: 48,
   });
 
-  const jpegHigh = await exportFlattened(project, {
-    format: "jpeg",
-    quality: 80,
-  });
-  const jpegLow = await exportFlattened(project, {
-    format: "jpeg",
-    quality: 20,
-  });
+  const jpegHigh = await exportFlattened(project, { format: "jpeg", quality: 80 });
+  const jpegLow = await exportFlattened(project, { format: "jpeg", quality: 20 });
   const webpHigh = await exportFlattened(project, {
     format: "webp",
     quality: 80,
@@ -426,10 +419,8 @@ test("export paints colored and outlined text", async () => {
     const green = image.data[index + 1] ?? 0;
     const blue = image.data[index + 2] ?? 0;
     const alpha = image.data[index + 3] ?? 0;
-    if (red > 200 && blue > 200 && green < 40 && alpha > 200)
-      painted.push(index);
-    if (red < 40 && green < 40 && blue < 40 && alpha > 100)
-      outlined.push(index);
+    if (red > 200 && blue > 200 && green < 40 && alpha > 200) painted.push(index);
+    if (red < 40 && green < 40 && blue < 40 && alpha > 100) outlined.push(index);
   }
   expect(painted.length).toBeGreaterThan(0);
   expect(outlined.length).toBeGreaterThan(0);
