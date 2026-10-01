@@ -6,6 +6,16 @@ Whether you're documenting your character's story, sharing a memorable interacti
 
 Use ShotMagic in your browser or as a Windows desktop app. Start with a screenshot or a blank canvas, arrange images, text, and rectangles as layers, then save an editable project or export the finished picture. Image processing happens on your device; your screenshots are not uploaded to a server.
 
+## Download for Windows
+
+A Windows `.exe` installer is available on the [Releases page](https://github.com/fkeenv/screenshot-editor/releases).
+
+1. Open the latest release and expand **Assets**.
+2. Download the `.exe` installer.
+3. Run the installer, then open ShotMagic to start editing your GTA roleplay screenshots.
+
+You do not need Node.js or npm when using the installer.
+
 ## Features
 
 - **Images:** import JPG, PNG, WebP, GIF, or BMP files. Paste or drag and drop an image, move it, resize it proportionally, or edit its position numerically. Only the first image is imported at a time.
