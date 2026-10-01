@@ -1,4 +1,5 @@
 import type { AppearancePreference } from "./appearance";
+import { EditorIcon } from "./EditorIcon";
 import { Combobox, Input, InputBase, NativeSelect, useCombobox } from "@mantine/core";
 import {
   useEffect,
@@ -137,7 +138,7 @@ function CropControls({
 
   return (
     <form
-      className="control-group crop-controls"
+      className="control-group flex flex-wrap gap-[8px] items-end crop-controls"
       key={`${layer.id}-${layer.crop.x}-${layer.crop.y}-${layer.crop.width}-${layer.crop.height}`}
       onSubmit={applyCrop}
     >
@@ -207,7 +208,7 @@ function ScaleControls({
   const percent = Math.round(layer.scale * 100);
 
   return (
-    <div className="control-group scale-control">
+    <div className="control-group flex flex-wrap gap-[8px] items-end scale-control">
       <label>
         Scale
         <input
@@ -290,7 +291,8 @@ function TextControls({
   }
 
   return (
-    <div className="text-controls" role="toolbar" aria-label="Text formatting">
+    <div className="text-controls grid grid-cols-2 gap-[12px] items-end" role="toolbar" aria-label="Text formatting">
+      <h3 className="property-section-title">Typography</h3>
       <NativeSelect
         className="text-font-field"
         label="Font"
@@ -299,6 +301,115 @@ function TextControls({
         value={layer.fontFamily}
         onChange={(event) => onEdit({ fontFamily: event.target.value })}
       />
+      <div className="selection-colors grid gap-[8px] pt-[12px] border-t-[1px] [border-top-style:solid] border-t-stroke" aria-label="Selection colors">
+        <Combobox
+          store={colorCombobox}
+          size="xs"
+          onOptionSubmit={(value) => {
+            setColorPreset(value);
+            colorCombobox.closeDropdown();
+            if (value === "custom") {
+              colorCombobox.focusTarget();
+              return;
+            }
+            const preset =
+              TEXT_COLOR_PRESETS[value as keyof typeof TEXT_COLOR_PRESETS];
+            if (!preset) return;
+            onBeginColorInteraction();
+            onApplyColor(preset.color);
+            onFinishColorInteraction();
+          }}
+        >
+          <Combobox.Target targetType="button">
+            <InputBase
+              component="button"
+              type="button"
+              className="text-color-field"
+              label="Text color"
+              size="xs"
+              pointer
+              data-text-color-control
+              disabled={!canColorSelection}
+              rightSection={<Combobox.Chevron />}
+              rightSectionPointerEvents="none"
+              onPointerDown={onBeginColorInteraction}
+              onKeyDown={onBeginColorInteraction}
+              onClick={() => colorCombobox.toggleDropdown()}
+              onBlur={(event) => {
+                colorCombobox.closeDropdown();
+                finishColorBlur(event);
+              }}
+            >
+              {selectedColor ? (
+                <span className="text-color-option inline-flex gap-[8px] items-center">
+                  <span
+                    className="text-color-swatch"
+                    aria-hidden="true"
+                    style={{ backgroundColor: selectedColor.color }}
+                  />
+                  {selectedColor.label}
+                </span>
+              ) : (
+                <Input.Placeholder>Choose a color…</Input.Placeholder>
+              )}
+            </InputBase>
+          </Combobox.Target>
+          <Combobox.Dropdown
+            className="text-color-dropdown"
+            data-text-color-control
+          >
+            <Combobox.Options>
+              {Object.entries(TEXT_COLOR_PRESETS).map(([value, preset]) => (
+                <Combobox.Option
+                  key={value}
+                  value={value}
+                  active={value === colorPreset}
+                >
+                  <span className="text-color-option inline-flex gap-[8px] items-center">
+                    <span
+                      className="text-color-swatch"
+                      aria-hidden="true"
+                      style={{ backgroundColor: preset.color }}
+                    />
+                    {preset.label}
+                  </span>
+                </Combobox.Option>
+              ))}
+              <Combobox.Option value="custom" active={colorPreset === "custom"}>
+                <span className="text-color-option inline-flex gap-[8px] items-center">
+                  <span
+                    className="text-color-swatch"
+                    aria-hidden="true"
+                    style={{ backgroundColor: customColor }}
+                  />
+                  Custom…
+                </span>
+              </Combobox.Option>
+            </Combobox.Options>
+          </Combobox.Dropdown>
+        </Combobox>
+        {colorPreset === "custom" ? (
+          <label>
+            Custom
+            <input
+              className="color-input"
+              data-text-color-control
+              type="color"
+              value={customColor}
+              disabled={!canColorSelection}
+              onPointerDown={onBeginColorInteraction}
+              onChange={(event) => {
+                setCustomColor(event.target.value);
+                onApplyColor(event.target.value);
+              }}
+              onBlur={finishColorBlur}
+            />
+          </label>
+        ) : null}
+        <p className="color-selection-hint m-0 text-muted text-[12px] leading-[1.4]">
+          Select text on the canvas to change its color.
+        </p>
+      </div>
       <label>
         Size
         <input
@@ -316,7 +427,7 @@ function TextControls({
       >
         B
       </button>
-      <span className="toolbar-divider" />
+      <h3 className="property-section-title">Outline &amp; shadow</h3>
       <label>
         Outline
         <input
@@ -396,6 +507,7 @@ function TextControls({
           </label>
         </>
       ) : null}
+      <h3 className="property-section-title">Text box</h3>
       <label>
         Spacing
         <input
@@ -417,116 +529,8 @@ function TextControls({
           onChange={(event) => editNumber("wrapWidth", event.target.value, 1)}
         />
       </label>
-      <span className="toolbar-divider" />
-      <div className="selection-colors" aria-label="Selection colors">
-        <Combobox
-          store={colorCombobox}
-          size="xs"
-          onOptionSubmit={(value) => {
-            setColorPreset(value);
-            colorCombobox.closeDropdown();
-            if (value === "custom") {
-              colorCombobox.focusTarget();
-              return;
-            }
-            const preset =
-              TEXT_COLOR_PRESETS[value as keyof typeof TEXT_COLOR_PRESETS];
-            if (!preset) return;
-            onBeginColorInteraction();
-            onApplyColor(preset.color);
-            onFinishColorInteraction();
-          }}
-        >
-          <Combobox.Target targetType="button">
-            <InputBase
-              component="button"
-              type="button"
-              className="text-color-field"
-              label="Text color"
-              size="xs"
-              pointer
-              data-text-color-control
-              disabled={!canColorSelection}
-              rightSection={<Combobox.Chevron />}
-              rightSectionPointerEvents="none"
-              onPointerDown={onBeginColorInteraction}
-              onKeyDown={onBeginColorInteraction}
-              onClick={() => colorCombobox.toggleDropdown()}
-              onBlur={(event) => {
-                colorCombobox.closeDropdown();
-                finishColorBlur(event);
-              }}
-            >
-              {selectedColor ? (
-                <span className="text-color-option">
-                  <span
-                    className="text-color-swatch"
-                    aria-hidden="true"
-                    style={{ backgroundColor: selectedColor.color }}
-                  />
-                  {selectedColor.label}
-                </span>
-              ) : (
-                <Input.Placeholder>Choose a color…</Input.Placeholder>
-              )}
-            </InputBase>
-          </Combobox.Target>
-          <Combobox.Dropdown
-            className="text-color-dropdown"
-            data-text-color-control
-          >
-            <Combobox.Options>
-              {Object.entries(TEXT_COLOR_PRESETS).map(([value, preset]) => (
-                <Combobox.Option
-                  key={value}
-                  value={value}
-                  active={value === colorPreset}
-                >
-                  <span className="text-color-option">
-                    <span
-                      className="text-color-swatch"
-                      aria-hidden="true"
-                      style={{ backgroundColor: preset.color }}
-                    />
-                    {preset.label}
-                  </span>
-                </Combobox.Option>
-              ))}
-              <Combobox.Option value="custom" active={colorPreset === "custom"}>
-                <span className="text-color-option">
-                  <span
-                    className="text-color-swatch"
-                    aria-hidden="true"
-                    style={{ backgroundColor: customColor }}
-                  />
-                  Custom…
-                </span>
-              </Combobox.Option>
-            </Combobox.Options>
-          </Combobox.Dropdown>
-        </Combobox>
-        {colorPreset === "custom" ? (
-          <label>
-            Custom
-            <input
-              className="color-input"
-              data-text-color-control
-              type="color"
-              value={customColor}
-              disabled={!canColorSelection}
-              onPointerDown={onBeginColorInteraction}
-              onChange={(event) => {
-                setCustomColor(event.target.value);
-                onApplyColor(event.target.value);
-              }}
-              onBlur={finishColorBlur}
-            />
-          </label>
-        ) : null}
-        <p className="color-selection-hint">
-          Select text on the canvas to change its color.
-        </p>
-      </div>
+      <span className="toolbar-divider w-[1px] h-[20px] my-0 mx-[4px] bg-stroke" />
+
     </div>
   );
 }
@@ -1317,16 +1321,20 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   };
 
   return (
-    <div className="app">
-      <header className="editor-chrome" inert={imageCrop ? true : undefined}>
-        <div className="menu-row">
-          <span className="app-title">Screenshot editor</span>
+    <div className="app grid grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[auto_minmax(0,1fr)_28px] h-screen text-editor">
+      <header className="editor-chrome col-span-full min-w-0 bg-chrome z-1" inert={imageCrop ? true : undefined}>
+        <div className="menu-row flex min-h-[56px] items-center px-[18px] gap-[14px] border-b-[1px] [border-bottom-style:solid] border-b-stroke">
+          <span className="app-title flex items-center gap-[10px] pr-[12px] text-editor-strong text-[13px] font-bold whitespace-nowrap">
+            <span className="brand-mark"><EditorIcon name="layers" /></span>
+            <span>Screenshot editor<small className="brand-caption">Local workbench</small></span>
+          </span>
           <div className="project-actions">
-            <button type="button" onClick={() => void openProjectFile()}>
-              Open project
+            <button type="button" aria-label="Open project" onClick={() => void openProjectFile()}>
+              Open
             </button>
             <button
               type="button"
+              aria-label="Save project"
               onClick={() => {
                 void files.saveProject(saveProject(project)).then(
                   () => setProjectFileError(undefined),
@@ -1339,13 +1347,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 );
               }}
             >
-              Save project
+              Save
             </button>
           </div>
-          <span className="document-status">
-            {project.canvasWidth}×{project.canvasHeight} · {Math.round(project.zoom * 100)}%
-          </span>
-          <label className="appearance-control">
+          <label className="appearance-control ml-auto flex flex-none items-center gap-[6px] text-muted text-[12px]">
             <span>Appearance</span>
             <select
               aria-label="Appearance"
@@ -1359,74 +1364,53 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               <option value="dark">Dark</option>
             </select>
           </label>
+          <button
+            type="button"
+            className="primary-export"
+            onClick={() => {
+              void saveCurrentExport().then(
+                () => setExportError(undefined),
+                (error: unknown) => setExportError(
+                  error instanceof Error ? error.message : "The image could not be exported.",
+                ),
+              );
+            }}
+          >
+            <EditorIcon name="export" /> Export {exportFormat.toUpperCase()}
+          </button>
         </div>
-        <div className="main-toolbar">
+        <div className="main-toolbar flex flex-wrap items-center gap-y-[6px] gap-x-[12px] py-[7px] px-[12px] border-b-[1px] [border-bottom-style:solid] border-b-stroke bg-panel">
           <div className="toolbar-group">
-            <button type="button" className="primary-action" onClick={() => void importImage()}>
-              Import image
-            </button>
-            <button
-              type="button"
-              aria-pressed={placingText}
-              className={placingText ? "active-control" : undefined}
-              onClick={() => {
-                setActiveMenu("Chat");
-                setToolsPanelOpen(true);
-                setPlacingText(false);
-                requestAnimationFrame(() => chatDraftRef.current?.focus());
-              }}
-            >
-              Add text
-            </button>
-            <button type="button" disabled={!selectedImageLayer} onClick={startImageCrop}>
-              Crop image
-            </button>
             <button
               type="button"
               disabled={!selectedLayer}
               onClick={duplicateSelectedLayer}
             >
-              Duplicate layer
+              <EditorIcon name="duplicate" /> Duplicate layer
             </button>
             <button
               type="button"
               disabled={!selectedLayer}
               onClick={() => deleteSelectedLayer()}
             >
-              Delete layer
+              <EditorIcon name="delete" /> Delete layer
             </button>
           </div>
           <div className="toolbar-group">
             <button type="button" onClick={() => setProject(undo)} disabled={project.past.length === 0}>
-              Undo
+              <EditorIcon name="undo" /> Undo
             </button>
             <button type="button" onClick={() => setProject(redo)} disabled={project.future.length === 0}>
-              Redo
+              <EditorIcon name="redo" /> Redo
             </button>
           </div>
-          <div className="toolbar-group zoom-group">
+          <div className="toolbar-group zoom-group gap-0">
             <button type="button" aria-label="Zoom out" onClick={() => changeZoom(project.zoom / 1.25)}>−</button>
             <span className="zoom-value">{Math.round(project.zoom * 100)}%</span>
             <button type="button" aria-label="Zoom in" onClick={() => changeZoom(project.zoom * 1.25)}>+</button>
             <button type="button" className="fit-button" aria-label="Fit canvas to stage" onClick={fitCanvas}>Fit</button>
           </div>
-          <div className="toolbar-group toolbar-end">
-            <button
-              type="button"
-              onClick={() => {
-                void saveCurrentExport().then(
-                  () => setExportError(undefined),
-                  (error: unknown) =>
-                    setExportError(
-                      error instanceof Error
-                        ? error.message
-                        : "The image could not be exported.",
-                    ),
-                );
-              }}
-            >
-              Export {exportFormat.toUpperCase()}
-            </button>
+          <div className="toolbar-group toolbar-end ml-auto">
             <button
               type="button"
               onClick={() => {
@@ -1456,15 +1440,29 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           </div>
         </div>
         {importError || projectFileError || exportError ? (
-          <div className="workspace-errors" role="alert">
+          <div className="workspace-errors py-[5px] px-[12px] text-error text-[12px] border-b-[1px] [border-bottom-style:solid] border-b-stroke" role="alert">
             {[importError, projectFileError, exportError].filter(Boolean).join(" · ")}
           </div>
         ) : null}
       </header>
 
+      <nav className="tool-rail col-start-1 row-start-2 flex w-[52px] flex-col items-center gap-[8px] py-[14px] bg-chrome" aria-label="Editor tools" inert={imageCrop ? true : undefined}>
+        <button type="button" title="Select" aria-label="Select" aria-pressed={!placingText} onClick={() => setPlacingText(false)}><EditorIcon name="select" /></button>
+        <button type="button" title="Crop image" aria-label="Crop image" disabled={!selectedImageLayer} onClick={startImageCrop}><EditorIcon name="crop" /></button>
+        <button type="button" title="Add text" aria-label="Add text" aria-pressed={placingText} onClick={() => {
+          setActiveMenu("Chat");
+          setToolsPanelOpen(true);
+          setPlacingText(false);
+          requestAnimationFrame(() => chatDraftRef.current?.focus());
+        }}><EditorIcon name="text" /></button>
+        <button type="button" title="Import image" aria-label="Import image" onClick={() => void importImage()}><EditorIcon name="image" /></button>
+      </nav>
+
+      {toolsPanelOpen || layersPanelOpen ? (
+        <div className={`editor-dock col-start-3 row-start-2 grid min-h-0 w-[var(--dock-width)] bg-panel ${toolsPanelOpen && layersPanelOpen ? "grid-rows-[minmax(0,1fr)_minmax(180px,30%)]" : "grid-rows-1"}`}>
       {toolsPanelOpen ? (
-        <aside className="tool-panel" id="tools-panel" ref={toolPanelRef} aria-label="Inspector" inert={imageCrop ? true : undefined}>
-          <nav className="menu-tabs" role="tablist" aria-label="Inspector views">
+        <aside className="tool-panel min-h-0 min-w-0 overflow-auto bg-panel" id="tools-panel" ref={toolPanelRef} aria-label="Inspector" inert={imageCrop ? true : undefined}>
+          <nav className="menu-tabs sticky top-0 z-1 grid grid-cols-4 border-b-[1px] [border-bottom-style:solid] border-b-stroke bg-chrome" role="tablist" aria-label="Inspector views">
             {TOOL_MENUS.map((menu) => (
               <button
                 type="button"
@@ -1484,8 +1482,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           </nav>
           <div id="active-tool-panel" role="tabpanel" aria-label={`${activeMenu} tools`}>
           {activeMenu === "Chat" ? (
-            <div className="chat-draft">
-              <span className="panel-heading">Draft chat</span>
+            <div className="chat-draft grid gap-[12px]">
+              <span className="panel-heading w-full text-editor-strong text-[13px] font-bold">Draft chat</span>
               <p>Type or paste chat lines, then place them on the canvas.</p>
               <label>
                 Chat text
@@ -1526,8 +1524,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             </div>
           ) : null}
           {activeMenu === "Export" ? (
-            <div className="control-group">
-              <span className="panel-heading">Export settings</span>
+            <div className="control-group flex flex-wrap gap-[8px] items-end">
+              <span className="panel-heading w-full text-editor-strong text-[13px] font-bold">Export settings</span>
               <p className="tool-hint">
                 PNG and WebP keep transparent backgrounds. JPG uses the chosen
                 solid background, or #111827 for transparent projects. Stitch
@@ -1574,7 +1572,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   <output>{exportQuality}</output>
                 </>
               ) : null}
-              <span className="tool-hint">
+              <span className="tool-hint inline-flex min-h-[34px] items-center self-end text-muted text-[12px]">
                 PNG stays sharp and can be transparent. JPG is opaque. Lower
                 quality makes JPG and WebP smaller.
               </span>
@@ -1582,11 +1580,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           ) : null}
 
           {activeMenu === "Stitch" ? (
-            <div className="control-group stitch-panel">
+            <div className="control-group flex flex-wrap gap-[8px] items-end stitch-panel w-full">
               <button type="button" onClick={() => void addStitchScreens()}>
                 Add screens
               </button>
-              <ol className="stitch-list">
+              <ol className="stitch-list grid gap-[6px] w-full m-0 p-0 list-none">
                 {stitchScreens.map((screen, index) => (
                   <li key={screen.id}>
                     <span>{screen.name}</span>
@@ -1636,7 +1634,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               >
                 Export stitch
               </button>
-              <span className="tool-hint">
+              <span className="tool-hint inline-flex min-h-[34px] items-center self-end text-muted text-[12px]">
                 Add saved screens and order them from top to bottom. Export uses
                 the format and quality selected under Export.
               </span>
@@ -1646,7 +1644,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
           {activeMenu === "Properties" ? (
             <>
-              <form className="control-group" onSubmit={applyTypedSize}>
+              <details className="canvas-settings group" open={!selectedLayer}>
+                <summary aria-label="Canvas settings" className="flex cursor-pointer items-center gap-[8px] py-[4px] font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
+                  <span className="inline-block group-open:rotate-90" aria-hidden="true">›</span>
+                  Canvas
+                  <span className="ml-auto tracking-normal">{project.canvasWidth} × {project.canvasHeight}</span>
+                </summary>
+              <form className="control-group flex flex-wrap gap-[8px] items-end" onSubmit={applyTypedSize}>
                 <span className="control-title">Canvas size</span>
                 {PRESETS.map((preset) => (
                   <button
@@ -1697,8 +1701,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   </>
                 ) : null}
               </form>
+              </details>
 
-              <div className="control-group">
+              <div className="control-group flex flex-wrap gap-[8px] items-end">
                 <label>
                   Canvas background
                   <select
@@ -1733,8 +1738,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
               {selectedLayer ? (
                 <>
-                  <div className="tool-divider" />
-                  <span className="panel-heading">
+                  <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
+                  <span className="panel-heading w-full text-editor-strong text-[13px] font-bold">
                     {selectedLayer.kind === "image" ? "Image" : "Text"} properties
                   </span>
                   <SelectedLayerControls
@@ -1746,7 +1751,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   />
                 </>
               ) : (
-                <p className="tool-hint">
+                <p className="tool-hint inline-flex min-h-[34px] items-center self-end text-muted text-[12px]">
                   {placingText
                     ? "Click the canvas to place the text box."
                     : "Select an image or text layer to edit its properties."}
@@ -1755,7 +1760,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
               {selectedImageLayer ? (
                 <>
-                  <div className="tool-divider" />
+                  <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
                   <ImagePositionControls
                       key={`position-${selectedImageLayer.id}`}
                       layer={selectedImageLayer}
@@ -1775,7 +1780,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                         });
                       }}
                     />
-                    <div className="tool-divider" />
+                    <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
                     <ScaleControls
                     key={selectedImageLayer.id}
                     layer={selectedImageLayer}
@@ -1797,7 +1802,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                       )
                     }
                   />
-                  <div className="tool-divider" />
+                  <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
                   <CropControls
                     layer={selectedImageLayer}
                     onCrop={(crop) =>
@@ -1811,8 +1816,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
               {selectedTextLayer ? (
                 <>
-                  <div className="tool-divider" />
-                <div className="composer">
+                  <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
+                <div className="composer w-full min-w-0">
                   <TextControls
                     key={selectedTextLayer.id}
                     layer={selectedTextLayer}
@@ -1842,9 +1847,19 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           </div>
         </aside>
       ) : null}
+      {layersPanelOpen ? (
+        <LayersPanel
+          layers={project.layers}
+          selectedLayerId={selectedLayerId}
+          actions={layerActions}
+          inert={imageCrop ? true : undefined}
+        />
+      ) : null}
+        </div>
+      ) : null}
 
       <div
-        className={`viewport${placingText ? " placing-text" : ""}`}
+        className={`viewport relative col-start-2 row-start-2 flex-1 min-w-0 min-h-0 overflow-hidden cursor-grab bg-app touch-none${placingText ? " placing-text" : ""}`}
         ref={viewportRef}
         onPointerDown={onViewportPointerDown}
         onDragOver={(event) => {
@@ -1880,7 +1895,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         }}
       >
         {imageDropActive ? (
-          <div className="image-drop-target" role="status">
+          <div className="image-drop-target absolute inset-[16px] z-20 flex flex-col items-center justify-center gap-[8px] border-[2px] border-dashed border-accent rounded-[12px] bg-panel text-editor text-[24px] pointer-events-none" role="status">
             Drop screenshot here
             <span>Only the first image is imported.</span>
           </div>
@@ -1902,10 +1917,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             onPointerDown={(event) => event.stopPropagation()}
           >
             <div className="welcome-card">
-              <span className="welcome-eyebrow">New canvas</span>
+              <span className="welcome-eyebrow text-muted text-[11px] font-bold tracking-[0.12em] uppercase">New canvas</span>
               <h1>Start here</h1>
               <p>Choose a screenshot, paste an image, or drop one here. Only the first image is imported. You can also open a saved project or start blank.</p>
-              <div className="welcome-actions">
+              <div className="welcome-actions grid gap-[8px] mt-[22px]">
                 <button type="button" className="welcome-primary" onClick={() => void importImage()}>
                   Choose screenshot
                 </button>
@@ -1941,7 +1956,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           }}
         >
           <div
-            className="canvas-content"
+            className="canvas-content absolute inset-0 overflow-hidden"
             style={{ backgroundColor: project.canvasBackground.kind === "solid"
               ? project.canvasBackground.color : undefined }}
           >
@@ -1950,7 +1965,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 const styles = imageLayerStyles(layer);
                 return (
                   <div
-                    className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                    className={`canvas-layer absolute cursor-move touch-none image-layer overflow-hidden${selectedLayerId === layer.id ? " selected" : ""}`}
                     key={layer.id}
                     style={styles.frame}
                     title={layer.name}
@@ -1981,7 +1996,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   : undefined;
               return (
                 <div
-                  className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
+                  className={`canvas-layer absolute cursor-move touch-none text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
                   key={layer.id}
                   style={{
                     ...styles.frame,
@@ -2013,7 +2028,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
                         <span
                           key={corner}
-                          className={`text-resize-handle ${corner}`}
+                          className={`text-resize-handle absolute z-2 w-[10px] h-[10px] bg-white border-[1px] border-solid border-accent rounded-[1px] ${corner}`}
                           onPointerDown={(event) =>
                             resizeTextBox(
                               event,
@@ -2072,14 +2087,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         </div>
         </div>
       </div>
-      {layersPanelOpen ? (
-        <LayersPanel
-          layers={project.layers}
-          selectedLayerId={selectedLayerId}
-          actions={layerActions}
-          inert={imageCrop ? true : undefined}
-        />
-      ) : null}
+      <footer className="editor-status col-span-full flex items-center justify-between px-[16px] font-mono text-[10px] text-muted bg-chrome">
+        <span><span className="local-indicator" aria-hidden="true" /> Local project · Nothing uploaded</span>
+        <span>{project.layers.length} {project.layers.length === 1 ? "layer" : "layers"}　/　{project.canvasWidth} × {project.canvasHeight}　/　{Math.round(project.zoom * 100)}%</span>
+      </footer>
     </div>
   );
 }

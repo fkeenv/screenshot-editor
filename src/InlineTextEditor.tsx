@@ -147,7 +147,7 @@ export function InlineTextEditor({
 
   return (
     <div className="inline-text-editor-shell">
-      <div className="inline-text-preview" aria-hidden="true">
+      <div className="inline-text-preview pointer-events-none" aria-hidden="true">
         <PresentedText text={presentation} />
       </div>
       <EditorContent

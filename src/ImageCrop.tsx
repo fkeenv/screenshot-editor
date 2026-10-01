@@ -65,7 +65,7 @@ export function ImageCrop({ layer, crop, zoom, onChange }: ImageCropProps) {
 
   return (
     <div
-      className="image-crop-overlay"
+      className="image-crop-overlay absolute z-10 touch-none"
       role="region"
       aria-label="Image crop"
       style={
@@ -79,7 +79,7 @@ export function ImageCrop({ layer, crop, zoom, onChange }: ImageCropProps) {
       }
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <div className="image-crop-preview">
+      <div className="image-crop-preview absolute inset-0 overflow-hidden">
         <img
           src={layer.source}
           alt=""

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { MantineProvider } from "@mantine/core";
+import { compile } from "@tailwindcss/node";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   addImageLayer,
   addTextLayer,
@@ -22,6 +24,21 @@ import {
 let root: Root;
 let container: HTMLDivElement;
 let saved: string | undefined;
+let editorStyles: string;
+
+beforeAll(async () => {
+  const stylesheet = await compile(readFileSync("src/index.css", "utf8"), {
+    base: resolve("src"),
+    onDependency: () => undefined,
+  });
+  const candidates = readdirSync("src")
+    .filter((file) => file.endsWith(".tsx") && !file.includes(".test."))
+    .flatMap(
+      (file) =>
+        readFileSync(`src/${file}`, "utf8").match(/[^\s"'`<>${}]+/g) ?? [],
+    );
+  editorStyles = stylesheet.build(candidates);
+});
 
 function stackedProject() {
   let project = addImageLayer(openProject(), {
@@ -128,7 +145,7 @@ afterEach(async () => {
 function loadEditorStyles() {
   const style = document.createElement("style");
   style.id = "editor-preview-styles";
-  style.textContent = readFileSync("src/index.css", "utf8");
+  style.textContent = editorStyles;
   document.head.append(style);
 }
 
@@ -179,11 +196,69 @@ test("canvas background controls preview a saved color independently of appearan
   expect(container.textContent).toContain("#111827 for transparent projects");
 });
 
+test("the tool rail stays left while the inspector and layers share one right-hand dock", async () => {
+  loadEditorStyles();
+  await mount(addTextLayer(openProject(), "chat"));
+  const dock = container.querySelector(".editor-dock")!;
+  expect(dock.contains(container.querySelector("#tools-panel"))).toBe(true);
+  expect(dock.contains(container.querySelector("#layers-panel"))).toBe(true);
+  expect(getComputedStyle(dock).gridColumnStart).toBe("3");
+  expect(
+    getComputedStyle(container.querySelector(".tool-rail")!).gridColumnStart,
+  ).toBe("1");
+  expect(
+    getComputedStyle(container.querySelector(".viewport")!).gridColumnStart,
+  ).toBe("2");
+  await click("Hide inspector");
+  expect(container.querySelector("#tools-panel")).toBeNull();
+  expect(container.querySelector("#layers-panel")).not.toBeNull();
+  await click("Hide layers");
+  expect(container.querySelector(".editor-dock")).toBeNull();
+  await click("Inspector");
+  await click("Layers");
+  expect(
+    container
+      .querySelector(".editor-dock")!
+      .contains(container.querySelector("#tools-panel")),
+  ).toBe(true);
+  expect(
+    container
+      .querySelector(".editor-dock")!
+      .contains(container.querySelector("#layers-panel")),
+  ).toBe(true);
+});
+
+test("canvas settings collapse for layer editing and still resize the canvas with undo", async () => {
+  await mount(addTextLayer(openProject(), "chat"));
+  await selectLayer("Text");
+  const settings =
+    container.querySelector<HTMLDetailsElement>(".canvas-settings")!;
+  expect(settings.open).toBe(false);
+  await act(async () => settings.querySelector("summary")!.click());
+  expect(settings.open).toBe(true);
+  await click("1150×600");
+  expect(await openSavedProjectFromEditor()).toMatchObject({
+    canvasWidth: 1150,
+    canvasHeight: 600,
+  });
+  await click("Undo");
+  expect(await openSavedProjectFromEditor()).toMatchObject({
+    canvasWidth: 800,
+    canvasHeight: 600,
+  });
+});
+
 test("new text previews a shadow and exposes separate shadow and outline controls", async () => {
   loadEditorStyles();
   await mount(addTextLayer(openProject(), "chat"));
   await selectLayer("Text");
   const text = container.querySelector<HTMLElement>(".text-layer")!;
+  expect(getComputedStyle(container.querySelector(".app")!).display).toBe(
+    "grid",
+  );
+  expect(
+    getComputedStyle(container.querySelector(".text-controls")!).display,
+  ).toBe("grid");
   expect(text.style.fontSize).toBe("14px");
   expect(text.style.fontWeight).toBe("700");
   expect(text.style.webkitTextStroke).toBe("1px #000000");
@@ -310,18 +385,18 @@ test.each(["empty", "text-only"])(
     expect(styles.backgroundSize).toBe("32px 32px");
     const theme = getComputedStyle(document.documentElement);
     expect(theme.getPropertyValue("--transparency-light").trim()).toBe(
-      "#f8f9fc",
+      "#faf8f4",
     );
     expect(theme.getPropertyValue("--transparency-dark").trim()).toBe(
-      "#d4dae5",
+      "#ded9d0",
     );
     document.documentElement.dataset.appearance = "dark";
     const darkTheme = getComputedStyle(document.documentElement);
     expect(darkTheme.getPropertyValue("--transparency-light").trim()).toBe(
-      "#384156",
+      "#3e3943",
     );
     expect(darkTheme.getPropertyValue("--transparency-dark").trim()).toBe(
-      "#272e40",
+      "#302d34",
     );
     expect(getComputedStyle(canvas).backgroundImage).toContain(
       "repeating-conic-gradient",
@@ -336,8 +411,8 @@ test("changing to dark mode updates the checkerboard without changing the saved 
   const lightProject = saved;
   document.documentElement.dataset.appearance = "dark";
   const theme = getComputedStyle(document.documentElement);
-  expect(theme.getPropertyValue("--transparency-light").trim()).toBe("#384156");
-  expect(theme.getPropertyValue("--transparency-dark").trim()).toBe("#272e40");
+  expect(theme.getPropertyValue("--transparency-light").trim()).toBe("#3e3943");
+  expect(theme.getPropertyValue("--transparency-dark").trim()).toBe("#302d34");
   expect(
     getComputedStyle(container.querySelector(".canvas")!).backgroundImage,
   ).toContain("repeating-conic-gradient");
