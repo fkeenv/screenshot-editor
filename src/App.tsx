@@ -24,6 +24,7 @@ import {
   duplicateLayer,
   editTextLayer,
   fitImageLayerToCanvas,
+  moveLayer,
   nudgeLayer,
   openProject,
   openSavedProject,
@@ -40,6 +41,7 @@ import {
   TEXT_COLOR_PRESETS,
   undo,
   type ImageLayer,
+  type ImageResizeCorner,
   type Project,
   type TextContent,
   type TextLayer,
@@ -68,6 +70,8 @@ import {
 import { presentProject } from "./presentation";
 import { PresentedText } from "./PresentedText";
 import { ImageCrop } from "./ImageCrop";
+import { ImageResizeHandles } from "./ImageResizeHandles";
+import { ImagePositionControls } from "./ImagePositionControls";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -747,6 +751,69 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setPlacingText(false);
     setActiveMenu("Properties");
     setWelcomeDismissed(true);
+  }
+
+  function resizeImage(
+    event: PointerEvent<HTMLButtonElement>,
+    layerId: string,
+    corner: ImageResizeCorner,
+  ) {
+    event.stopPropagation();
+    event.preventDefault();
+    if (event.button !== 0 || layerInteractions.current.get(layerId)?.size)
+      return;
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const gesture = beginUndoableEdit(project);
+    handle.setPointerCapture(pointerId);
+    function update(move: globalThis.PointerEvent): UndoableEditUpdate {
+      return {
+        type: "resize-image",
+        layerId,
+        corner,
+        screenDelta: { x: move.clientX - startX, y: move.clientY - startY },
+      };
+    }
+    function onMove(move: globalThis.PointerEvent) {
+      if (move.pointerId !== pointerId || move.buttons === 0) return;
+      setProject(gesture.preview(update(move)));
+    }
+    function onUp(up: globalThis.PointerEvent) {
+      if (up.pointerId !== pointerId) return;
+      cleanup();
+      setProject(
+        up.type === "pointercancel"
+          ? gesture.cancel()
+          : gesture.finish(update(up)),
+      );
+    }
+    function cancel() {
+      cleanup();
+      setProject(gesture.cancel());
+    }
+    function onKeyDown(key: KeyboardEvent) {
+      if (key.key !== "Escape") return;
+      key.preventDefault();
+      cancel();
+    }
+    function cleanup() {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      handle.removeEventListener("lostpointercapture", cancel);
+      window.removeEventListener("keydown", onKeyDown);
+      unregister();
+      if (handle.hasPointerCapture(pointerId))
+        handle.releasePointerCapture(pointerId);
+    }
+    const unregister = trackLayerInteraction(layerId, cancel);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+    handle.addEventListener("lostpointercapture", cancel);
+    window.addEventListener("keydown", onKeyDown);
   }
 
   function resizeTextBox(
@@ -1496,7 +1563,27 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               {selectedImageLayer ? (
                 <>
                   <div className="tool-divider" />
-                  <ScaleControls
+                  <ImagePositionControls
+                      key={`position-${selectedImageLayer.id}`}
+                      layer={selectedImageLayer}
+                      onPosition={(axis, value) => {
+                        setProject((current) => {
+                          const layer = current.layers.find(
+                            (candidate) =>
+                              candidate.id === selectedImageLayer.id,
+                          );
+                          if (!layer) return current;
+                          return moveLayer(
+                            current,
+                            layer.id,
+                            axis === "x" ? value : layer.x,
+                            axis === "y" ? value : layer.y,
+                          );
+                        });
+                      }}
+                    />
+                    <div className="tool-divider" />
+                    <ScaleControls
                     key={selectedImageLayer.id}
                     layer={selectedImageLayer}
                     beginEdit={() =>
@@ -1622,14 +1709,57 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
           }}
         >
-          {presentProject(presentationProject, measureDomText).map((layer) => {
-            if (layer.kind === "image") {
-              const styles = imageLayerStyles(layer);
+          <div className="canvas-content">
+            {presentProject(presentationProject, measureDomText).map((layer) => {
+              if (layer.kind === "image") {
+                const styles = imageLayerStyles(layer);
+                return (
+                  <div
+                    className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                    key={layer.id}
+                    style={styles.frame}
+                    title={layer.name}
+                    onPointerDown={(event) =>
+                      onLayerPointerDown(event, {
+                        id: layer.id,
+                        kind: layer.kind,
+                        x: layer.frame.x,
+                        y: layer.frame.y,
+                      })
+                    }
+                  >
+                    <img
+                      src={layer.source}
+                      alt=""
+                      draggable={false}
+                      style={styles.content}
+                    />
+                  </div>
+                );
+              }
+
+              const styles = textLayerStyles(layer);
+              const editingLayer =
+                editingTextLayerId === layer.id &&
+                selectedTextLayer?.id === layer.id
+                  ? selectedTextLayer
+                  : undefined;
               return (
                 <div
-                  className={`canvas-layer image-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                  className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
                   key={layer.id}
-                  style={styles.frame}
+                  style={{
+                    ...styles.frame,
+                    left: layer.frame.x - (editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0),
+                    top: layer.frame.y - (editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0),
+                    width:
+                      layer.frame.width +
+                      (editingLayer ? TEXT_EDIT_FRAME_WIDTH * 2 : 0),
+                    minHeight:
+                      layer.frame.height +
+                      (editingLayer ? TEXT_EDIT_FRAME_WIDTH * 2 : 0),
+                    padding: editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0,
+                  }}
                   title={layer.name}
                   onPointerDown={(event) =>
                     onLayerPointerDown(event, {
@@ -1639,93 +1769,61 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                       y: layer.frame.y,
                     })
                   }
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    beginTextEditing(layer.id);
+                  }}
                 >
-                  <img
-                    src={layer.source}
-                    alt=""
-                    draggable={false}
-                    style={styles.content}
-                  />
+                  {selectedLayerId === layer.id
+                    ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
+                        <span
+                          key={corner}
+                          className={`text-resize-handle ${corner}`}
+                          onPointerDown={(event) =>
+                            resizeTextBox(
+                              event,
+                              {
+                                id: layer.id,
+                                x: layer.frame.x,
+                                wrapWidth: layer.frame.width,
+                              },
+                              corner,
+                            )
+                          }
+                        />
+                      ))
+                    : null}
+                  {editingLayer ? (
+                    <InlineTextEditor
+                      layer={editingLayer}
+                      presentation={layer}
+                      selectText={selectTextOnEdit}
+                      editorHandle={textEditor}
+                      onSelectionChange={setHasTextSelection}
+                      onPreview={(content) =>
+                        setEditingTextPreview({ layerId: layer.id, content })
+                      }
+                      onColorCommit={textColorEdit.preview}
+                      onCommit={(content) => finishTextEditing(layer.id, content)}
+                      onCancel={cancelTextEditing}
+                    />
+                  ) : (
+                    <PresentedText text={layer} />
+                  )}
                 </div>
-              );
-            }
-
-            const styles = textLayerStyles(layer);
-            const editingLayer =
-              editingTextLayerId === layer.id &&
-              selectedTextLayer?.id === layer.id
-                ? selectedTextLayer
-                : undefined;
-            return (
-              <div
-                className={`canvas-layer text-layer${selectedLayerId === layer.id ? " selected" : ""}${editingTextLayerId === layer.id ? " editing" : ""}`}
-                key={layer.id}
-                style={{
-                  ...styles.frame,
-                  left: layer.frame.x - (editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0),
-                  top: layer.frame.y - (editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0),
-                  width:
-                    layer.frame.width +
-                    (editingLayer ? TEXT_EDIT_FRAME_WIDTH * 2 : 0),
-                  minHeight:
-                    layer.frame.height +
-                    (editingLayer ? TEXT_EDIT_FRAME_WIDTH * 2 : 0),
-                  padding: editingLayer ? TEXT_EDIT_FRAME_WIDTH : 0,
-                }}
-                title={layer.name}
-                onPointerDown={(event) =>
-                  onLayerPointerDown(event, {
-                    id: layer.id,
-                    kind: layer.kind,
-                    x: layer.frame.x,
-                    y: layer.frame.y,
-                  })
+                );
+              })}
+          </div>
+          {selectedImageLayer?.visible && !imageCrop && !placingText ? (
+              <ImageResizeHandles
+                layer={selectedImageLayer}
+                zoom={project.zoom}
+                onStart={(event, corner) =>
+                  resizeImage(event, selectedImageLayer.id, corner)
                 }
-                onDoubleClick={(event) => {
-                  event.stopPropagation();
-                  beginTextEditing(layer.id);
-                }}
-              >
-                {selectedLayerId === layer.id
-                  ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
-                      <span
-                        key={corner}
-                        className={`text-resize-handle ${corner}`}
-                        onPointerDown={(event) =>
-                          resizeTextBox(
-                            event,
-                            {
-                              id: layer.id,
-                              x: layer.frame.x,
-                              wrapWidth: layer.frame.width,
-                            },
-                            corner,
-                          )
-                        }
-                      />
-                    ))
-                  : null}
-                {editingLayer ? (
-                  <InlineTextEditor
-                    layer={editingLayer}
-                    presentation={layer}
-                    selectText={selectTextOnEdit}
-                    editorHandle={textEditor}
-                    onSelectionChange={setHasTextSelection}
-                    onPreview={(content) =>
-                      setEditingTextPreview({ layerId: layer.id, content })
-                    }
-                    onColorCommit={textColorEdit.preview}
-                    onCommit={(content) => finishTextEditing(layer.id, content)}
-                    onCancel={cancelTextEditing}
-                  />
-                ) : (
-                  <PresentedText text={layer} />
-                )}
-              </div>
-              );
-            })}
-          {imageCrop ? (
+              />
+            ) : null}
+            {imageCrop ? (
             <ImageCrop
               layer={imageCrop.layer}
               crop={imageCrop.crop}

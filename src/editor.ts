@@ -38,6 +38,8 @@ export type ImageLayer = {
   };
 };
 
+export type ImageResizeCorner = "nw" | "ne" | "sw" | "se";
+
 export type TextColorRun = {
   start: number;
   end: number;
@@ -870,6 +872,12 @@ export type UndoableEditUpdate =
       scale: number;
     }
   | {
+      type: "resize-image";
+      layerId: string;
+      corner: ImageResizeCorner;
+      screenDelta: { x: number; y: number };
+    }
+  | {
       type: "set-layer-opacity";
       layerId: string;
       opacity: number;
@@ -930,6 +938,16 @@ function applyUndoableEdit(
       "image",
       (layer) =>
         layer.scale === update.scale ? layer : { ...layer, scale: update.scale },
+      false,
+    );
+  }
+
+  if (update.type === "resize-image") {
+    return updateImageResize(
+      project,
+      update.layerId,
+      update.corner,
+      update.screenDelta,
       false,
     );
   }
@@ -1001,6 +1019,57 @@ export function scaleImageLayer(
 ): Project {
   return updateLayer(project, layerId, "image", (layer) =>
     layer.scale === scale ? layer : { ...layer, scale },
+  );
+}
+
+export function resizeImageLayer(
+  project: Project,
+  layerId: string,
+  corner: ImageResizeCorner,
+  screenDelta: { x: number; y: number },
+): Project {
+  return updateImageResize(project, layerId, corner, screenDelta, true);
+}
+
+function updateImageResize(
+  project: Project,
+  layerId: string,
+  corner: ImageResizeCorner,
+  screenDelta: { x: number; y: number },
+  recordHistory: boolean,
+): Project {
+  if (!Number.isFinite(screenDelta.x) || !Number.isFinite(screenDelta.y)) {
+    return project;
+  }
+  return updateLayer(
+    project,
+    layerId,
+    "image",
+    (layer) => {
+      const width = layer.crop.width * layer.scale;
+      const height = layer.crop.height * layer.scale;
+      const fromLeft = corner.includes("w");
+      const fromTop = corner.includes("n");
+      const dx = (screenDelta.x / project.zoom) * (fromLeft ? -1 : 1);
+      const dy = (screenDelta.y / project.zoom) * (fromTop ? -1 : 1);
+      const factor =
+        1 + (dx * width + dy * height) / (width * width + height * height);
+      const minimumScale = Math.min(
+        layer.scale,
+        1 / Math.min(layer.crop.width, layer.crop.height),
+      );
+      const scale = Math.max(minimumScale, layer.scale * factor);
+      if (scale === layer.scale) return layer;
+      const x = fromLeft ? layer.x + width - layer.crop.width * scale : layer.x;
+      const y = fromTop
+        ? layer.y + height - layer.crop.height * scale
+        : layer.y;
+      if (![x, y, scale].every(Number.isFinite)) return layer;
+      return layer.x === x && layer.y === y && layer.scale === scale
+        ? layer
+        : { ...layer, x, y, scale };
+    },
+    recordHistory,
   );
 }
 
