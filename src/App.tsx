@@ -20,11 +20,13 @@ import {
 } from "./dom-presentation";
 import {
   addImageLayer,
+  addRectangleLayer,
   addTextLayer,
   beginUndoableEdit,
   cropImageLayer,
   deleteLayer,
   duplicateLayer,
+  editRectangleLayer,
   editTextLayer,
   fitImageLayerToCanvas,
   moveLayer,
@@ -77,6 +79,9 @@ import { PresentedText } from "./PresentedText";
 import { ImageCrop } from "./ImageCrop";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
+import { RectangleControls } from "./RectangleControls";
+import { snapToGrid } from "./grid";
+import { snapLayerPosition, type SnapGuide } from "./snapping";
 import {
   prepareImageImport,
   transferredImage,
@@ -565,6 +570,12 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     content: TextContent;
   }>();
   const [placingText, setPlacingText] = useState(false);
+  const [gridVisible, setGridVisible] = useState(false);
+  const [gridSnapping, setGridSnapping] = useState(false);
+  const [gridSpacing, setGridSpacing] = useState(20);
+  const [canvasSnapping, setCanvasSnapping] = useState(false);
+  const [snapPadding, setSnapPadding] = useState(16);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
@@ -572,7 +583,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [imageCrop, setImageCrop] = useState<{
     layer: ImageLayer;
     crop: ImageLayer["crop"];
+    view: { zoom: number; panX: number; panY: number };
   }>();
+  const view = imageCrop?.view ?? project;
   const textEditor = useRef<TextEditorHandle | null>(null);
   const chatDraftRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -586,6 +599,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     selectedLayer?.kind === "image" ? selectedLayer : undefined;
   const selectedTextLayer =
     selectedLayer?.kind === "text" ? selectedLayer : undefined;
+  const selectedRectangleLayer =
+    selectedLayer?.kind === "rectangle" ? selectedLayer : undefined;
   const draftContent = parseColoredText(chatDraft);
   const hasDraftText = draftContent.text.trim().length > 0;
   const presentationProject = editingTextPreview
@@ -738,6 +753,21 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
   }
 
+  function insertRectangle() {
+    for (const layerId of [...layerInteractions.current.keys()]) {
+      cancelLayerInteractions(layerId);
+    }
+    textEditor.current?.commit();
+    resetTextEditing();
+    const id = crypto.randomUUID();
+    setProject((current) => addRectangleLayer(current, id));
+    setSelectedLayerId(id);
+    setActiveMenu("Properties");
+    setToolsPanelOpen(true);
+    setPlacingText(false);
+    setWelcomeDismissed(true);
+  }
+
   async function importImage() {
     try {
       const [file] = await files.importImages();
@@ -880,7 +910,48 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     if (!selectedImageLayer) return;
     resetTextEditing();
     setPlacingText(false);
-    setImageCrop({ layer: selectedImageLayer, crop: { ...selectedImageLayer.crop } });
+    setImageCrop({
+      layer: selectedImageLayer,
+      crop: { ...selectedImageLayer.crop },
+      view: { zoom: project.zoom, panX: project.panX, panY: project.panY },
+    });
+  }
+
+  function zoomImageCrop(factor: number) {
+    setImageCrop((current) => {
+      if (!current) return current;
+      const zoom = Math.min(16, Math.max(0.00001, current.view.zoom * factor));
+      const ratio = zoom / current.view.zoom;
+      return {
+        ...current,
+        view: {
+          zoom,
+          panX: current.view.panX * ratio,
+          panY: current.view.panY * ratio,
+        },
+      };
+    });
+  }
+
+  function fitImageCrop() {
+    const viewport = viewportRef.current;
+    if (!viewport || !imageCrop) return;
+    const { layer } = imageCrop;
+    const width = layer.crop.width * layer.scale;
+    const height = layer.crop.height * layer.scale;
+    const zoom = Math.min(
+      (viewport.clientWidth - 96) / width,
+      (viewport.clientHeight - 160) / height,
+    );
+    if (zoom <= 0) return;
+    setImageCrop((current) => current ? {
+      ...current,
+      view: {
+        zoom,
+        panX: (project.canvasWidth / 2 - layer.x - width / 2) * zoom,
+        panY: (project.canvasHeight / 2 - layer.y - height / 2) * zoom + 32,
+      },
+    } : current);
   }
 
   function applyImageCrop() {
@@ -889,7 +960,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setImageCrop(undefined);
   }
 
-  function placeTextBox(event: { clientX: number; clientY: number }) {
+  function placeTextBox(event: { clientX: number; clientY: number; shiftKey?: boolean }) {
     if (!hasDraftText) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -902,7 +973,10 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     const id = crypto.randomUUID();
-    setProject((current) => addTextLayer(current, id, { x, y }, draftContent));
+    const position = gridSnapping && !event.shiftKey
+      ? { x: snapToGrid(x, gridSpacing), y: snapToGrid(y, gridSpacing) }
+      : { x, y };
+    setProject((current) => addTextLayer(current, id, position, draftContent));
     setSelectedLayerId(id);
     resetTextEditing();
     setChatDraft("");
@@ -1089,19 +1163,39 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (placingText || imageCrop) return;
+    if (placingText || event.button !== 0) return;
+    if (!imageCrop && event.target instanceof Node &&
+      !canvasRef.current?.contains(event.target)) {
+      for (const layerId of [...layerInteractions.current.keys()]) {
+        cancelLayerInteractions(layerId);
+      }
+      textEditor.current?.commit();
+      resetTextEditing();
+      setSelectedLayerId(undefined);
+      setSnapGuides([]);
+    }
     const viewport = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
-    const originX = project.panX;
-    const originY = project.panY;
-    const gesture = beginUndoableEdit(project);
+    const originX = view.panX;
+    const originY = view.panY;
     viewport.setPointerCapture(event.pointerId);
 
+    function updateCropPan(panX: number, panY: number) {
+      setImageCrop((current) => current ? {
+        ...current,
+        view: { ...current.view, panX, panY },
+      } : current);
+    }
+
     function onMove(move: globalThis.PointerEvent) {
-      if (move.buttons === 0) return;
-      setProject(
-        gesture.preview({
+      if (move.buttons === 0 || move.pointerId !== event.pointerId) return;
+      if (imageCrop) {
+        updateCropPan(originX + move.clientX - startX, originY + move.clientY - startY);
+        return;
+      }
+      setProject((current) =>
+        beginUndoableEdit(current).preview({
           type: "pan-viewport",
           panX: originX + move.clientX - startX,
           panY: originY + move.clientY - startY,
@@ -1110,15 +1204,23 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     }
 
     function onUp(up: globalThis.PointerEvent) {
+      if (up.pointerId !== event.pointerId) return;
       removeListeners();
+      if (imageCrop) {
+        updateCropPan(
+          up.type === "pointercancel" ? originX : originX + up.clientX - startX,
+          up.type === "pointercancel" ? originY : originY + up.clientY - startY,
+        );
+        return;
+      }
       if (up.type === "pointercancel") {
-        setProject(gesture.cancel());
+        setProject((current) => ({ ...current, panX: originX, panY: originY }));
         return;
       }
       const panX = originX + up.clientX - startX;
       const panY = originY + up.clientY - startY;
-      setProject(
-        gesture.finish({
+      setProject((current) =>
+        beginUndoableEdit({ ...current, panX: originX, panY: originY }).finish({
           type: "pan-viewport",
           panX,
           panY,
@@ -1143,7 +1245,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     event: PointerEvent<HTMLDivElement>,
     layer: {
       id: string;
-      kind: "image" | "text";
+      kind: "image" | "text" | "rectangle";
       x: number;
       y: number;
     },
@@ -1167,15 +1269,34 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     const zoom = project.zoom;
     const gesture = beginUndoableEdit(project);
     element.setPointerCapture(event.pointerId);
+    const frame = presentProject(presentationProject, measureDomText)
+      .find((candidate) => candidate.id === layer.id)?.frame;
+
+    function position(move: globalThis.PointerEvent) {
+      const x = originX + (move.clientX - startX) / zoom;
+      const y = originY + (move.clientY - startY) / zoom;
+      if (!move.shiftKey && frame &&
+        (move.clientX !== startX || move.clientY !== startY)) {
+        return snapLayerPosition(
+          { x, y },
+          frame,
+          { width: project.canvasWidth, height: project.canvasHeight },
+          { canvas: canvasSnapping, grid: gridSnapping, spacing: gridSpacing, padding: snapPadding, zoom },
+        );
+      }
+      return { x, y, guides: [] };
+    }
 
     function onMove(move: globalThis.PointerEvent) {
       if (move.buttons === 0) return;
+      const { x, y, guides } = position(move);
+      setSnapGuides(guides);
       setProject(
         gesture.preview({
           type: "move-layer",
           layerId: layer.id,
-          x: originX + (move.clientX - startX) / zoom,
-          y: originY + (move.clientY - startY) / zoom,
+          x,
+          y,
         }),
       );
     }
@@ -1183,16 +1304,18 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     function onUp(up: globalThis.PointerEvent) {
       removeListeners();
       unregister();
+      setSnapGuides([]);
       if (up.type === "pointercancel") {
         setProject(gesture.cancel());
         return;
       }
+      const { x, y } = position(up);
       setProject(
         gesture.finish({
           type: "move-layer",
           layerId: layer.id,
-          x: originX + (up.clientX - startX) / zoom,
-          y: originY + (up.clientY - startY) / zoom,
+          x,
+          y,
         }),
       );
     }
@@ -1212,6 +1335,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     unregister = trackLayerInteraction(layer.id, () => {
       removeListeners();
       unregister();
+      setSnapGuides([]);
       setProject(gesture.cancel());
     });
   }
@@ -1411,6 +1535,14 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             <button type="button" className="fit-button" aria-label="Fit canvas to stage" onClick={fitCanvas}>Fit</button>
           </div>
           <div className="toolbar-group toolbar-end ml-auto">
+            <button type="button" aria-label="Show grid" aria-pressed={gridVisible}
+              onClick={() => setGridVisible((visible) => !visible)}>Grid</button>
+            <button type="button" aria-label="Snap to grid" aria-pressed={gridSnapping}
+              title="Snap layer drags and text placement. Hold Shift to bypass."
+              onClick={() => setGridSnapping((snapping) => !snapping)}>Snap</button>
+            <button type="button" aria-label="Snap to canvas" aria-pressed={canvasSnapping}
+              title="Snap to canvas center, edges, and padding. Hold Shift to bypass."
+              onClick={() => setCanvasSnapping((snapping) => !snapping)}>Guides</button>
             <button
               type="button"
               onClick={() => {
@@ -1455,6 +1587,14 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           setPlacingText(false);
           requestAnimationFrame(() => chatDraftRef.current?.focus());
         }}><EditorIcon name="text" /></button>
+        <button
+          type="button"
+          title="Add rectangle"
+          aria-label="Add rectangle"
+          onClick={insertRectangle}
+        >
+          <EditorIcon name="rectangle" />
+        </button>
         <button type="button" title="Import image" aria-label="Import image" onClick={() => void importImage()}><EditorIcon name="image" /></button>
       </nav>
 
@@ -1736,11 +1876,71 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 </label>
               </div>
 
+              <div className="control-group flex flex-wrap gap-[8px] items-end">
+                <label>
+                  Grid spacing (px)
+                  <input
+                    key={gridSpacing}
+                    type="number"
+                    min="1"
+                    max="512"
+                    step="1"
+                    aria-label="Grid spacing"
+                    defaultValue={gridSpacing}
+                    onBlur={(event) => {
+                      const spacing = Number(event.currentTarget.value);
+                      if (Number.isInteger(spacing) && spacing >= 1 && spacing <= 512) {
+                        setGridSpacing(spacing);
+                      } else event.currentTarget.value = String(gridSpacing);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.currentTarget.value = String(gridSpacing);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </label>
+                <label>
+                  Snap padding (px)
+                  <input
+                    key={snapPadding}
+                    type="number"
+                    min="0"
+                    max="512"
+                    step="1"
+                    aria-label="Snap padding"
+                    defaultValue={snapPadding}
+                    onBlur={(event) => {
+                      const padding = Number(event.currentTarget.value);
+                      if (event.currentTarget.value.trim() && Number.isInteger(padding) && padding >= 0 && padding <= 512) {
+                        setSnapPadding(padding);
+                      } else event.currentTarget.value = String(snapPadding);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.currentTarget.value = String(snapPadding);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </label>
+                <p className="tool-hint">Grid and guides are editing aids, not part of your export. Guides snap to canvas center, edges, and padding. Hold Shift while dragging to bypass snapping.</p>
+              </div>
+
               {selectedLayer ? (
                 <>
                   <div className="tool-divider w-full h-[1px] my-[8px] mx-0 bg-stroke" />
                   <span className="panel-heading w-full text-editor-strong text-[13px] font-bold">
-                    {selectedLayer.kind === "image" ? "Image" : "Text"} properties
+                    {selectedLayer.kind === "image" ? "Image" : selectedLayer.kind === "rectangle" ? "Rectangle" : "Text"} properties
                   </span>
                   <SelectedLayerControls
                     key={selectedLayer.id}
@@ -1812,6 +2012,18 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     }
                   />
                 </>
+              ) : null}
+
+              {selectedRectangleLayer ? (
+                <RectangleControls
+                  key={selectedRectangleLayer.id}
+                  layer={selectedRectangleLayer}
+                  onEdit={(changes) =>
+                    setProject((current) =>
+                      editRectangleLayer(current, selectedRectangleLayer.id, changes),
+                    )
+                  }
+                />
               ) : null}
 
               {selectedTextLayer ? (
@@ -1906,6 +2118,12 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               <strong>Crop image</strong>
               <span role="status">{imageCrop.crop.width} × {imageCrop.crop.height} px</span>
             </div>
+            <span className="inline-flex items-center gap-[6px]">
+              <button type="button" aria-label="Zoom out crop" onClick={() => zoomImageCrop(1 / 1.25)}>−</button>
+              <output className="min-w-[40px] text-center text-[12px]">{Math.round(view.zoom * 100)}%</output>
+              <button type="button" aria-label="Zoom in crop" onClick={() => zoomImageCrop(1.25)}>+</button>
+              <button type="button" aria-label="Fit image for crop" onClick={fitImageCrop}>Fit image</button>
+            </span>
             <button type="button" onClick={() => setImageCrop(undefined)}>Cancel</button>
             <button type="button" className="primary-action" autoFocus onClick={applyImageCrop}>Apply</button>
           </div>
@@ -1937,8 +2155,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         <div
           className="canvas-anchor"
           style={{
-            width: project.canvasWidth * project.zoom,
-            height: project.canvasHeight * project.zoom,
+            width: project.canvasWidth * view.zoom,
+            height: project.canvasHeight * view.zoom,
           }}
         >
         <div
@@ -1952,7 +2170,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           style={{
             width: project.canvasWidth,
             height: project.canvasHeight,
-            transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
+            transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
           }}
         >
           <div
@@ -1985,6 +2203,32 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                       style={styles.content}
                     />
                   </div>
+                );
+              }
+
+              if (layer.kind === "rectangle") {
+                return (
+                  <div
+                    key={layer.id}
+                    title={layer.name}
+                    className={`canvas-layer absolute cursor-move touch-none rectangle-layer${selectedLayerId === layer.id ? " selected" : ""}`}
+                    style={{
+                      left: layer.frame.x,
+                      top: layer.frame.y,
+                      width: layer.frame.width,
+                      height: layer.frame.height,
+                      backgroundColor: layer.fill,
+                      opacity: layer.opacity,
+                    }}
+                    onPointerDown={(event) =>
+                      onLayerPointerDown(event, {
+                        id: layer.id,
+                        kind: layer.kind,
+                        x: layer.frame.x,
+                        y: layer.frame.y,
+                      })
+                    }
+                  />
                 );
               }
 
@@ -2064,6 +2308,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 );
               })}
           </div>
+          {gridVisible && !imageCrop ? (
+            <div
+              className="canvas-grid absolute inset-0 z-1 pointer-events-none"
+              aria-hidden="true"
+              style={{ backgroundSize: `${gridSpacing}px ${gridSpacing}px` }}
+            />
+          ) : null}
           {selectedImageLayer?.visible && !imageCrop && !placingText ? (
               <ImageResizeHandles
                 layer={selectedImageLayer}
@@ -2073,11 +2324,23 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 }
               />
             ) : null}
+          {!imageCrop && snapGuides.map((guide) => (
+            <div
+              key={guide.axis}
+              className={`snap-guide ${guide.axis === "x" ? "vertical" : "horizontal"}`}
+              aria-hidden="true"
+              style={guide.axis === "x"
+                ? { left: guide.position, top: 0, height: project.canvasHeight, borderLeftWidth: 1 / project.zoom }
+                : { left: 0, top: guide.position, width: project.canvasWidth, borderTopWidth: 1 / project.zoom }}
+            >
+              <span style={{ transform: `scale(${1 / project.zoom})` }}>{guide.label}</span>
+            </div>
+          ))}
             {imageCrop ? (
             <ImageCrop
               layer={imageCrop.layer}
               crop={imageCrop.crop}
-              zoom={project.zoom}
+              zoom={view.zoom}
               onChange={(crop) => setImageCrop((current) => current ? { ...current, crop } : current)}
             />
           ) : null}

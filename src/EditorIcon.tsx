@@ -3,6 +3,7 @@ const paths = {
   crop: "M7 3v14h14M3 7h14v14",
   text: "M4 5h16M12 5v15M8 20h8",
   image: "M3 4h18v16H3ZM3 17l6-6 4 4 3-3 5 5M16 8h.01",
+  rectangle: "M3 5h18v14H3Z",
   duplicate: "M8 8h13v13H8ZM16 8V3H3v13h5",
   delete: "M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7",
   undo: "M9 4 4 9l5 5M4 9h10a6 6 0 0 1 0 12",

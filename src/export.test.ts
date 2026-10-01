@@ -4,6 +4,8 @@ import { createRequire } from "node:module";
 import { beforeAll, expect, test } from "vitest";
 import {
   addImageLayer,
+  addRectangleLayer,
+  editRectangleLayer,
   addTextLayer,
   editTextLayer,
   moveLayer,
@@ -22,6 +24,80 @@ import {
 } from "./export";
 
 const require = createRequire(import.meta.url);
+
+test.each(["png", "webp", "jpeg"] as const)(
+  "%s export paints rectangle fills in layer order",
+  async (format) => {
+    let project = setCanvasSize(openProject(), 32, 32);
+    project = editRectangleLayer(addRectangleLayer(project, "red"), "red", {
+      x: 0,
+      y: 0,
+      width: 32,
+      height: 32,
+      fill: "#ff0000",
+    });
+    project = editRectangleLayer(addRectangleLayer(project, "blue"), "blue", {
+      x: 16,
+      y: 0,
+      width: 16,
+      height: 32,
+      fill: "#0000ff",
+    });
+    const image = await readPixels(
+      (await exportFlattened(project, { format, quality: 100, lossless: true }))
+        .bytes,
+    );
+    for (const [x, expected] of [
+      [4, [255, 0, 0, 255]],
+      [28, [0, 0, 255, 255]],
+    ] as const) {
+      const offset = (16 * 32 + x) * 4;
+      expected.forEach((channel, index) =>
+        expect(image.data[offset + index]).toBeCloseTo(channel, -1),
+      );
+    }
+  },
+);
+
+test("rectangle exports preserve opacity, clipping, hidden layers, and stitch offsets", async () => {
+  const rectangle = editRectangleLayer(
+    addRectangleLayer(setCanvasSize(openProject(), 4, 4), "shape"),
+    "shape",
+    {
+      x: -2,
+      y: 1,
+      width: 4,
+      height: 2,
+      fill: "#ff0000",
+    },
+  );
+  const faded = setLayerOpacity(rectangle, "shape", 0.5);
+  const image = await readPixels(
+    (await exportFlattened(faded, { format: "png", quality: 100 })).bytes,
+  );
+  expect(Array.from(image.data.slice(16, 19))).toEqual([255, 0, 0]);
+  expect(image.data[19]).toBeGreaterThanOrEqual(127);
+  expect(image.data[19]).toBeLessThanOrEqual(128);
+  expect(Array.from(image.data.slice(24, 28))).toEqual([0, 0, 0, 0]);
+  const hidden = await readPixels(
+    (
+      await exportFlattened(setLayerVisibility(faded, "shape", false), {
+        format: "png",
+        quality: 100,
+      })
+    ).bytes,
+  );
+  expect(Array.from(hidden.data).every((channel) => channel === 0)).toBe(true);
+  const stitched = await readPixels(
+    (
+      await exportStitch([setCanvasSize(openProject(), 4, 4), rectangle], {
+        format: "png",
+        quality: 100,
+      })
+    ).bytes,
+  );
+  expect(Array.from(stitched.data.slice(80, 84))).toEqual([255, 0, 0, 255]);
+});
 
 test.each(["png", "webp"] as const)(
   "%s stitch preserves each project's background and transparent padding",
@@ -170,7 +246,9 @@ beforeAll(async () => {
   const { init: initWebp } = await import("@jsquash/webp/encode");
   prepareExportCodecs(async () => {
     await initPng(
-      await readFile(require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm")),
+      await readFile(
+        require.resolve("@jsquash/png/codec/pkg/squoosh_png_bg.wasm"),
+      ),
     );
     await initJpeg({
       wasmBinary: await readFile(
@@ -293,12 +371,8 @@ test("export produces a jpeg and a webp of the canvas", async () => {
   expect(jpeg.mediaType).toBe("image/jpeg");
   expect(webp.mediaType).toBe("image/webp");
   expect(Array.from(jpeg.bytes.slice(0, 2))).toEqual([0xff, 0xd8]);
-  expect(Array.from(webp.bytes.slice(0, 4))).toEqual([
-    0x52, 0x49, 0x46, 0x46,
-  ]);
-  expect(Array.from(webp.bytes.slice(8, 12))).toEqual([
-    0x57, 0x45, 0x42, 0x50,
-  ]);
+  expect(Array.from(webp.bytes.slice(0, 4))).toEqual([0x52, 0x49, 0x46, 0x46]);
+  expect(Array.from(webp.bytes.slice(8, 12))).toEqual([0x57, 0x45, 0x42, 0x50]);
   const jpegImage = await readPixels(jpeg.bytes);
   const webpImage = await readPixels(webp.bytes);
   expect(jpegImage.width).toBe(3);
@@ -327,7 +401,10 @@ test("export paints an image layer onto the canvas", async () => {
   });
   project = moveLayer(project, "image-1", 1, 0);
 
-  const exported = await exportFlattened(project, { format: "png", quality: 80 });
+  const exported = await exportFlattened(project, {
+    format: "png",
+    quality: 80,
+  });
   const image = await readPixels(exported.bytes);
 
   expect(Array.from(image.data.slice(4, 8))).toEqual([255, 0, 0, 255]);
@@ -363,8 +440,14 @@ test("lowering quality makes the jpeg and webp smaller", async () => {
     height: 48,
   });
 
-  const jpegHigh = await exportFlattened(project, { format: "jpeg", quality: 80 });
-  const jpegLow = await exportFlattened(project, { format: "jpeg", quality: 20 });
+  const jpegHigh = await exportFlattened(project, {
+    format: "jpeg",
+    quality: 80,
+  });
+  const jpegLow = await exportFlattened(project, {
+    format: "jpeg",
+    quality: 20,
+  });
   const webpHigh = await exportFlattened(project, {
     format: "webp",
     quality: 80,
@@ -553,8 +636,10 @@ test("export paints colored and outlined text", async () => {
     const green = image.data[index + 1] ?? 0;
     const blue = image.data[index + 2] ?? 0;
     const alpha = image.data[index + 3] ?? 0;
-    if (red > 200 && blue > 200 && green < 40 && alpha > 200) painted.push(index);
-    if (red < 40 && green < 40 && blue < 40 && alpha > 100) outlined.push(index);
+    if (red > 200 && blue > 200 && green < 40 && alpha > 200)
+      painted.push(index);
+    if (red < 40 && green < 40 && blue < 40 && alpha > 100)
+      outlined.push(index);
   }
   expect(painted.length).toBeGreaterThan(0);
   expect(outlined.length).toBeGreaterThan(0);

@@ -49,9 +49,19 @@ export type TextLayerPresentation = {
   lines: TextLinePresentation[];
 };
 
+export type RectangleLayerPresentation = {
+  kind: "rectangle";
+  id: string;
+  name: string;
+  opacity: number;
+  fill: string;
+  frame: Rectangle;
+};
+
 export type LayerPresentation =
   | ImageLayerPresentation
-  | TextLayerPresentation;
+  | TextLayerPresentation
+  | RectangleLayerPresentation;
 
 export type MeasureText = (
   font: TextFontPresentation,
@@ -65,6 +75,16 @@ export function presentProject(
   return project.layers.flatMap((layer): LayerPresentation[] => {
     if (!layer.visible) return [];
     if (layer.kind === "text") return [presentTextLayer(layer, measureText)];
+    if (layer.kind === "rectangle") {
+      return [{
+        kind: layer.kind,
+        id: layer.id,
+        name: layer.name,
+        opacity: layer.opacity,
+        fill: layer.fill,
+        frame: { x: layer.x, y: layer.y, width: layer.width, height: layer.height },
+      }];
+    }
 
     return [
       {
