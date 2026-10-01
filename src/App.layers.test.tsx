@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
+import { readFileSync } from "node:fs";
 import {
   addImageLayer,
   addTextLayer,
@@ -13,6 +14,7 @@ import {
   openSavedProject,
   saveProject,
   scaleImageLayer,
+  setLayerOpacity,
   setView,
   type Project,
 } from "./editor";
@@ -115,7 +117,119 @@ afterEach(async () => {
   delete window.screenshotEditorFiles;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  document.getElementById("editor-preview-styles")?.remove();
+  delete document.documentElement.dataset.appearance;
 });
+
+function loadEditorStyles() {
+  const style = document.createElement("style");
+  style.id = "editor-preview-styles";
+  style.textContent = readFileSync("src/index.css", "utf8");
+  document.head.append(style);
+}
+
+test.each(["empty", "text-only"])(
+  "both appearance modes show a transparency checkerboard for a %s canvas",
+  async (content) => {
+    loadEditorStyles();
+    const project =
+      content === "empty"
+        ? openProject()
+        : addTextLayer(
+            openProject(),
+            "caption",
+            { x: 10, y: 10 },
+            { text: "Caption", colorRuns: [] },
+          );
+    await mount(project);
+    const canvas = container.querySelector<HTMLElement>(".canvas")!;
+    const styles = getComputedStyle(canvas);
+    expect(styles.backgroundImage).toContain("repeating-conic-gradient");
+    expect(styles.backgroundSize).toBe("32px 32px");
+    const theme = getComputedStyle(document.documentElement);
+    expect(theme.getPropertyValue("--transparency-light").trim()).toBe(
+      "#f8f9fc",
+    );
+    expect(theme.getPropertyValue("--transparency-dark").trim()).toBe(
+      "#d4dae5",
+    );
+    document.documentElement.dataset.appearance = "dark";
+    const darkTheme = getComputedStyle(document.documentElement);
+    expect(darkTheme.getPropertyValue("--transparency-light").trim()).toBe(
+      "#384156",
+    );
+    expect(darkTheme.getPropertyValue("--transparency-dark").trim()).toBe(
+      "#272e40",
+    );
+    expect(getComputedStyle(canvas).backgroundImage).toContain(
+      "repeating-conic-gradient",
+    );
+  },
+);
+
+test("changing to dark mode updates the checkerboard without changing the saved project", async () => {
+  loadEditorStyles();
+  await mount();
+  await click("Save project");
+  const lightProject = saved;
+  document.documentElement.dataset.appearance = "dark";
+  const theme = getComputedStyle(document.documentElement);
+  expect(theme.getPropertyValue("--transparency-light").trim()).toBe("#384156");
+  expect(theme.getPropertyValue("--transparency-dark").trim()).toBe("#272e40");
+  expect(
+    getComputedStyle(container.querySelector(".canvas")!).backgroundImage,
+  ).toContain("repeating-conic-gradient");
+  await click("Save project");
+  expect(saved).toBe(lightProject);
+});
+
+test.each(["light", "dark"])(
+  "%s transparency preview stays behind cropped and translucent layers at a zoomed and panned view",
+  async (appearance) => {
+    loadEditorStyles();
+    document.documentElement.dataset.appearance = appearance;
+    let project = cropImageLayer(stackedProject(), "top", {
+      x: 5,
+      y: 5,
+      width: 20,
+      height: 10,
+    });
+    project = moveLayer(project, "top", 30, 40);
+    project = setLayerOpacity(project, "top", 0.4);
+    project = setLayerOpacity(project, "middle", 0.6);
+    project = setView(project, 2, 18, -12);
+    await mount(project);
+    const canvas = container.querySelector<HTMLElement>(".canvas")!;
+    expect(canvas.style.transform).toBe("translate(18px, -12px) scale(2)");
+    expect(getComputedStyle(canvas).backgroundImage).toContain(
+      "repeating-conic-gradient",
+    );
+    const image = container.querySelector<HTMLElement>('[title="Top.png"]')!;
+    const text = container.querySelector<HTMLElement>(".text-layer")!;
+    expect(image.style.opacity).toBe("0.4");
+    expect(image.style.left).toBe("30px");
+    expect(image.style.width).toBe("20px");
+    expect(getComputedStyle(image).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(text.style.opacity).toBe("0.6");
+    expect(getComputedStyle(text).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(saveProject(await openSavedProjectFromEditor())).toBe(
+      saveProject(project),
+    );
+    await selectLayer("Top.png");
+    await click("Crop image");
+    expect(getComputedStyle(canvas).backgroundImage).toContain(
+      "repeating-conic-gradient",
+    );
+    await click("Cancel");
+    await pointer(image, "pointerdown", 0, 0);
+    await pointer(image, "pointermove", 20, 20);
+    await pointer(image, "pointerup", 20, 20);
+    expect(image.style.left).toBe("40px");
+    expect(getComputedStyle(canvas).backgroundImage).toContain(
+      "repeating-conic-gradient",
+    );
+  },
+);
 
 function button(name: string) {
   const found = [...container.querySelectorAll("button")].find(

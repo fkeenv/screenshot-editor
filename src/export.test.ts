@@ -321,6 +321,55 @@ test("hidden layers are left out and opacity is kept", async () => {
   expect(Array.from(hidden.data)).toEqual([0, 0, 0, 0]);
 });
 
+test.each(["png", "webp"] as const)(
+  "%s flat and stitch exports keep transparent source pixels and layer opacity without preview colors",
+  async (format) => {
+    const source = createCanvas(2, 1);
+    const context = source.getContext("2d");
+    const pixels = context.createImageData(2, 1);
+    pixels.data.set([255, 0, 0, 128, 0, 0, 255, 255]);
+    context.putImageData(pixels, 0, 0);
+    let project = addImageLayer(setCanvasSize(openProject(), 4, 2), {
+      id: "translucent",
+      name: "Transparent image",
+      source: source.toDataURL(),
+      format: "image/png",
+      width: 2,
+      height: 1,
+    });
+    project = setLayerOpacity(project, "translucent", 0.5);
+    const expected = [255, 0, 0, 64, 0, 0, 255, 128, ...Array(24).fill(0)];
+    const options = { format, quality: 80, lossless: true };
+    const flat = await readPixels(
+      (await exportFlattened(project, options)).bytes,
+    );
+    expect(Array.from(flat.data)).toEqual(expected);
+    const stitched = await readPixels(
+      (await exportStitch([project, project], options)).bytes,
+    );
+    expect(stitched.height).toBe(4);
+    expect(Array.from(stitched.data)).toEqual([...expected, ...expected]);
+  },
+);
+
+test("JPEG stitch retains its opaque flattening background rather than preview colors", async () => {
+  const project = setCanvasSize(openProject(), 2, 2);
+  const stitched = await readPixels(
+    (await exportStitch([project, project], { format: "jpeg", quality: 80 }))
+      .bytes,
+  );
+  expect(stitched.height).toBe(4);
+  for (let index = 0; index < stitched.data.length; index += 4) {
+    expect(stitched.data[index]).toBeGreaterThanOrEqual(16);
+    expect(stitched.data[index]).toBeLessThanOrEqual(18);
+    expect(stitched.data[index + 1]).toBeGreaterThanOrEqual(23);
+    expect(stitched.data[index + 1]).toBeLessThanOrEqual(25);
+    expect(stitched.data[index + 2]).toBeGreaterThanOrEqual(38);
+    expect(stitched.data[index + 2]).toBeLessThanOrEqual(40);
+    expect(stitched.data[index + 3]).toBe(255);
+  }
+});
+
 test("an upper image covers a lower image", async () => {
   let project = setCanvasSize(openProject(), 1, 1);
   project = addImageLayer(project, {
