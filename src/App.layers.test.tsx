@@ -150,6 +150,182 @@ function loadEditorStyles() {
   document.head.append(style);
 }
 
+test.each(["light", "dark"])("%s text selection has explicit contrasting colors without changing chat styling", async (appearance) => {
+  loadEditorStyles();
+  document.documentElement.dataset.appearance = appearance;
+  const project = addTextLayer(openProject(), "chat", undefined, {
+    text: "Colored caption", colorRuns: [{ start: 0, end: 7, color: "#c2a3da" }],
+  });
+  await mount(project);
+  await selectLayer("Text");
+  await act(async () => container.querySelector(".text-layer")!
+    .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  const editor = container.querySelector(".inline-text-editor")!;
+  expect(editor.querySelector('[contenteditable="true"]')).not.toBeNull();
+  const stylesheet = (document.getElementById("editor-preview-styles") as HTMLStyleElement).sheet!;
+  const selection = [...stylesheet.cssRules].find((rule) =>
+    rule instanceof CSSStyleRule && rule.selectorText.includes(".inline-text-editor") && rule.selectorText.includes("::selection")) as CSSStyleRule | undefined;
+  expect(selection).toBeDefined();
+  expect(selection!.selectorText).toContain(".inline-text-editor *::selection");
+  const style = selection!.style;
+  expect(style.getPropertyValue("background-color")).toBe("rgb(37, 99, 235)");
+  expect(style.getPropertyValue("color")).toBe("rgb(255, 255, 255)");
+  expect(["#fff", "rgb(255, 255, 255)"]).toContain(style.getPropertyValue("-webkit-text-fill-color"));
+  expect(style.getPropertyValue("text-shadow")).toBe("none");
+  expect(style.getPropertyValue("-webkit-text-stroke")).toBe("0px");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+});
+
+test.each(["Text", "Top.png", "Rectangle"])(
+  "clicking outside the canvas deselects %s and hides its editing borders",
+  async (name) => {
+    loadEditorStyles();
+    const project = addRectangleLayer(stackedProject(), "rectangle");
+    await mount(project);
+    await selectLayer(name);
+    const viewport = container.querySelector(".viewport")!;
+    await pointer(viewport, "pointerdown", 10, 10);
+    await pointer(viewport, "pointerup", 10, 10);
+    expect(container.querySelectorAll(".canvas-layer.selected")).toHaveLength(0);
+    expect(container.querySelectorAll(".text-resize-handle, .image-resize-handle, .image-resize-outline")).toHaveLength(0);
+    expect(getComputedStyle(container.querySelector(".text-layer")!).outlineStyle).toBe("none");
+    expect(button("Delete layer").disabled).toBe(true);
+    expect(button("Duplicate layer").disabled).toBe(true);
+    expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+    expect(button("Undo").disabled).toBe(true);
+  },
+);
+
+test("clicking outside finishes chatbox editing and a workspace pan does not lose its new text", async () => {
+  vi.spyOn(window, "scrollBy").mockImplementation(() => undefined);
+  const createRange = document.createRange.bind(document);
+  vi.spyOn(document, "createRange").mockImplementation(() => {
+    const range = createRange();
+    return Object.assign(range, {
+      getClientRects: () => [new DOMRect(0, 0, 10, 10)],
+      getBoundingClientRect: () => new DOMRect(0, 0, 10, 10),
+    });
+  });
+  const project = addTextLayer(openProject(), "text");
+  await mount(project);
+  await selectLayer("Text");
+  const layer = container.querySelector(".text-layer")!;
+  await act(async () => layer.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  const editor = container.querySelector('[contenteditable="true"]')!;
+  const paste = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { getData: () => "Updated caption" } });
+  await act(async () => editor.dispatchEvent(paste));
+  const viewport = container.querySelector(".viewport")!;
+  await pointer(viewport, "pointerdown", 10, 10);
+  expect(container.querySelector('[contenteditable="true"]')).toBeNull();
+  await pointer(viewport, "pointermove", 50, 40);
+  await pointer(viewport, "pointerup", 50, 40);
+  const edited = await openSavedProjectFromEditor();
+  expect(edited.layers[0]).toMatchObject({ text: "Updated caption" });
+  expect(edited).toMatchObject({ panX: 40, panY: 30 });
+  expect(container.querySelectorAll(".canvas-layer.selected")).toHaveLength(0);
+  await click("Undo");
+  expect(await openSavedProjectFromEditor()).toMatchObject({ panX: 0, panY: 0 });
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ text: "Updated caption" });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+});
+
+test("toolbar and inspector interactions keep the selected chatbox", async () => {
+  await mount(addTextLayer(openProject(), "text"));
+  await selectLayer("Text");
+  await click("Properties");
+  await click("Show grid");
+  expect(container.querySelectorAll(".text-layer.selected")).toHaveLength(1);
+  expect(container.querySelectorAll(".text-resize-handle")).toHaveLength(4);
+});
+
+test.each([
+  ["center", 300, 240, "Center"],
+  ["top left", 0, 0, "Edge"],
+  ["bottom right", 600, 480, "Edge"],
+  ["padded top left", 16, 16, "Padding · 16px"],
+  ["padded bottom right", 584, 464, "Padding · 16px"],
+] as const)("canvas snapping shows alignment lines at %s then removes them on release", async (_name, x, y, label) => {
+  await mount(addRectangleLayer(openProject(), "rectangle"));
+  await click("Snap to canvas");
+  const layer = container.querySelector(".rectangle-layer")!;
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointermove", 100 + x - 300 + 3, 100 + y - 240 + 3);
+  const guides = container.querySelectorAll<HTMLElement>(".snap-guide");
+  expect(guides).toHaveLength(2);
+  expect([...guides].every((guide) => guide.textContent!.includes(label))).toBe(true);
+  expect(container.querySelector<HTMLElement>(".rectangle-layer")!.style.left).toBe(`${x}px`);
+  expect(container.querySelector<HTMLElement>(".rectangle-layer")!.style.top).toBe(`${y}px`);
+  await pointer(layer, "pointerup", 100 + x - 300 + 3, 100 + y - 240 + 3);
+  expect(container.querySelectorAll(".snap-guide")).toHaveLength(0);
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x, y });
+  if (x !== 300 || y !== 240) {
+    await click("Undo");
+    expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x: 300, y: 240 });
+    expect(button("Undo").disabled).toBe(true);
+  } else expect(button("Undo").disabled).toBe(true);
+});
+
+test("canvas snapping can be bypassed with Shift and cancellation removes guides", async () => {
+  await mount(addRectangleLayer(openProject(), "rectangle"));
+  await click("Snap to canvas");
+  const layer = container.querySelector(".rectangle-layer")!;
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointermove", 103, 103);
+  expect(container.querySelectorAll(".snap-guide")).toHaveLength(2);
+  const move = new MouseEvent("pointermove", { bubbles: true, clientX: 103, clientY: 103, buttons: 1, shiftKey: true });
+  Object.defineProperty(move, "pointerId", { value: 1 });
+  await act(async () => layer.dispatchEvent(move));
+  expect(container.querySelectorAll(".snap-guide")).toHaveLength(0);
+  expect(container.querySelector<HTMLElement>(".rectangle-layer")!.style.left).toBe("303px");
+  await pointer(layer, "pointercancel", 103, 103);
+  expect(container.querySelectorAll(".snap-guide")).toHaveLength(0);
+  expect(container.querySelector<HTMLElement>(".rectangle-layer")!.style.left).toBe("300px");
+  expect(button("Undo").disabled).toBe(true);
+});
+
+test("grid snapping shows a labeled guide even when the grid is hidden", async () => {
+  await mount(moveLayer(addRectangleLayer(openProject(), "rectangle"), "rectangle", 13, 17));
+  await click("Snap to grid");
+  const layer = container.querySelector(".rectangle-layer")!;
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointermove", 123, 112);
+  expect(container.querySelector(".canvas-grid")).toBeNull();
+  expect(container.querySelector(".snap-guide.vertical")!.textContent).toBe("Grid · 40px");
+  expect(container.querySelector(".snap-guide.horizontal")!.textContent).toBe("Grid · 20px");
+  await pointer(layer, "pointerup", 123, 112);
+  expect(container.querySelectorAll(".snap-guide")).toHaveLength(0);
+});
+
+test("crop and resize use contrasting dashed borders without changing handle geometry", async () => {
+  loadEditorStyles();
+  await mount(resizableProject());
+  await selectLayer("Screenshot");
+  const frame = container.querySelector<HTMLElement>(".image-resize-outline")!;
+  expect(frame.style.left).toBe("40px");
+  expect(frame.style.top).toBe("30px");
+  expect(frame.style.width).toBe("480px");
+  expect(frame.style.height).toBe("240px");
+  expect(frame.style.getPropertyValue("--resize-zoom")).toBe("0.5");
+  const frameStyle = getComputedStyle(frame);
+  expect(frameStyle.borderTopStyle).toBe("dashed");
+  expect(frameStyle.borderLeftStyle).toBe("dashed");
+  expect(frameStyle.borderTopColor).toBe("rgb(255, 255, 255)");
+  expect(frameStyle.outlineColor).toBe("rgb(17, 17, 17)");
+  expect(frameStyle.outlineStyle).toBe("solid");
+  expect(frameStyle.pointerEvents).toBe("none");
+  expect(container.querySelectorAll(".image-resize-handle")).toHaveLength(4);
+  await click("Crop image");
+  expect(container.querySelector(".image-resize-outline")).toBeNull();
+  const crop = container.querySelector<HTMLElement>(".image-crop-selection")!;
+  expect(getComputedStyle(crop).borderTopStyle).toBe("dashed");
+  expect(getComputedStyle(crop).borderLeftStyle).toBe("dashed");
+  expect(getComputedStyle(crop).outlineColor).toBe("rgb(17, 17, 17)");
+  expect(getComputedStyle(crop).outlineStyle).toBe("solid");
+  expect(container.querySelectorAll(".image-crop-handle")).toHaveLength(8);
+});
+
 test("grid controls change an editor-only overlay without changing the saved project or history", async () => {
   loadEditorStyles();
   const project = stackedProject();

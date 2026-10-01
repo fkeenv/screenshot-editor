@@ -473,12 +473,39 @@ button.active-control {
     linear-gradient(to bottom, rgb(0 0 0 / 35%) 1px, rgb(255 255 255 / 35%) 1px, rgb(255 255 255 / 35%) 2px, transparent 2px);
 }
 
+.snap-guide {
+  @apply absolute z-4 pointer-events-none;
+  border-color: #f4c95d;
+  border-style: solid;
+  border-width: 0;
+  filter: drop-shadow(0 0 1px #111);
+}
+
+.snap-guide.vertical {
+  border-left-width: 1px;
+}
+
+.snap-guide.horizontal {
+  border-top-width: 1px;
+}
+
+.snap-guide span {
+  @apply absolute top-[6px] left-[6px] py-[3px] px-[6px] text-[10px] font-mono whitespace-nowrap rounded-[3px];
+  color: #fff8e9;
+  background: #29262d;
+  transform-origin: top left;
+}
+
 .main-toolbar button[aria-pressed="true"] {
   @apply border-accent text-accent;
 }
 
 .image-layer img {
   @apply absolute max-w-none pointer-events-none select-none;
+}
+
+.image-layer.selected {
+  outline: none;
 }
 
 .image-crop-toolbar {
@@ -514,8 +541,15 @@ button.active-control {
 
 .image-crop-selection {
   @apply absolute;
-  border: calc(1px / var(--crop-zoom)) solid #fff;
-  box-shadow: 0 0 0 100000px rgb(0 0 0 / 60%);
+  box-sizing: border-box;
+  border-width: calc(2px / var(--crop-zoom));
+  border-style: dashed;
+  border-color: #fff;
+  outline-width: calc(1px / var(--crop-zoom));
+  outline-style: solid;
+  outline-color: #111;
+  box-shadow: inset 0 0 0 calc(1px / var(--crop-zoom)) #111,
+    0 0 0 100000px rgb(0 0 0 / 60%);
 }
 
 .image-crop-selection::before {
@@ -605,6 +639,18 @@ button.active-control {
   @apply w-full min-w-0;
 }
 
+.image-resize-outline {
+  @apply absolute z-3 pointer-events-none;
+  box-sizing: border-box;
+  border-width: calc(2px / var(--resize-zoom));
+  border-style: dashed;
+  border-color: #fff;
+  outline-width: calc(1px / var(--resize-zoom));
+  outline-style: solid;
+  outline-color: #111;
+  box-shadow: inset 0 0 0 calc(1px / var(--resize-zoom)) #111;
+}
+
 .image-resize-handles {
   @apply absolute z-3 pointer-events-none;
   transform: translate(-50%, -50%);
@@ -649,7 +695,6 @@ button.active-control {
   @apply text-white whitespace-pre-wrap;
   overflow-wrap: anywhere;
   paint-order: stroke fill;
-  outline: 1px dashed #a1a1aa;
 }
 
 .canvas-layer.text-layer.selected {
@@ -696,6 +741,15 @@ button.active-control {
   line-height: inherit;
   outline: 0;
   -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+
+.inline-text-editor::selection,
+.inline-text-editor *::selection {
+  background-color: #2563eb;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
   -webkit-text-stroke: 0;
   text-shadow: none;
 }

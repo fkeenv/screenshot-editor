@@ -81,6 +81,7 @@ import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
 import { RectangleControls } from "./RectangleControls";
 import { snapToGrid } from "./grid";
+import { snapLayerPosition, type SnapGuide } from "./snapping";
 import {
   prepareImageImport,
   transferredImage,
@@ -572,6 +573,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const [gridVisible, setGridVisible] = useState(false);
   const [gridSnapping, setGridSnapping] = useState(false);
   const [gridSpacing, setGridSpacing] = useState(20);
+  const [canvasSnapping, setCanvasSnapping] = useState(false);
+  const [snapPadding, setSnapPadding] = useState(16);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
   const [toolsPanelOpen, setToolsPanelOpen] = useState(true);
@@ -1160,12 +1164,21 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (placingText || event.button !== 0) return;
+    if (!imageCrop && event.target instanceof Node &&
+      !canvasRef.current?.contains(event.target)) {
+      for (const layerId of [...layerInteractions.current.keys()]) {
+        cancelLayerInteractions(layerId);
+      }
+      textEditor.current?.commit();
+      resetTextEditing();
+      setSelectedLayerId(undefined);
+      setSnapGuides([]);
+    }
     const viewport = event.currentTarget;
     const startX = event.clientX;
     const startY = event.clientY;
     const originX = view.panX;
     const originY = view.panY;
-    const gesture = beginUndoableEdit(project);
     viewport.setPointerCapture(event.pointerId);
 
     function updateCropPan(panX: number, panY: number) {
@@ -1181,8 +1194,8 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         updateCropPan(originX + move.clientX - startX, originY + move.clientY - startY);
         return;
       }
-      setProject(
-        gesture.preview({
+      setProject((current) =>
+        beginUndoableEdit(current).preview({
           type: "pan-viewport",
           panX: originX + move.clientX - startX,
           panY: originY + move.clientY - startY,
@@ -1201,13 +1214,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         return;
       }
       if (up.type === "pointercancel") {
-        setProject(gesture.cancel());
+        setProject((current) => ({ ...current, panX: originX, panY: originY }));
         return;
       }
       const panX = originX + up.clientX - startX;
       const panY = originY + up.clientY - startY;
-      setProject(
-        gesture.finish({
+      setProject((current) =>
+        beginUndoableEdit({ ...current, panX: originX, panY: originY }).finish({
           type: "pan-viewport",
           panX,
           panY,
@@ -1256,24 +1269,34 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     const zoom = project.zoom;
     const gesture = beginUndoableEdit(project);
     element.setPointerCapture(event.pointerId);
+    const frame = presentProject(presentationProject, measureDomText)
+      .find((candidate) => candidate.id === layer.id)?.frame;
 
     function position(move: globalThis.PointerEvent) {
       const x = originX + (move.clientX - startX) / zoom;
       const y = originY + (move.clientY - startY) / zoom;
-      if (gridSnapping && !move.shiftKey &&
+      if (!move.shiftKey && frame &&
         (move.clientX !== startX || move.clientY !== startY)) {
-        return { x: snapToGrid(x, gridSpacing), y: snapToGrid(y, gridSpacing) };
+        return snapLayerPosition(
+          { x, y },
+          frame,
+          { width: project.canvasWidth, height: project.canvasHeight },
+          { canvas: canvasSnapping, grid: gridSnapping, spacing: gridSpacing, padding: snapPadding, zoom },
+        );
       }
-      return { x, y };
+      return { x, y, guides: [] };
     }
 
     function onMove(move: globalThis.PointerEvent) {
       if (move.buttons === 0) return;
+      const { x, y, guides } = position(move);
+      setSnapGuides(guides);
       setProject(
         gesture.preview({
           type: "move-layer",
           layerId: layer.id,
-          ...position(move),
+          x,
+          y,
         }),
       );
     }
@@ -1281,15 +1304,18 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     function onUp(up: globalThis.PointerEvent) {
       removeListeners();
       unregister();
+      setSnapGuides([]);
       if (up.type === "pointercancel") {
         setProject(gesture.cancel());
         return;
       }
+      const { x, y } = position(up);
       setProject(
         gesture.finish({
           type: "move-layer",
           layerId: layer.id,
-          ...position(up),
+          x,
+          y,
         }),
       );
     }
@@ -1309,6 +1335,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     unregister = trackLayerInteraction(layer.id, () => {
       removeListeners();
       unregister();
+      setSnapGuides([]);
       setProject(gesture.cancel());
     });
   }
@@ -1513,6 +1540,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             <button type="button" aria-label="Snap to grid" aria-pressed={gridSnapping}
               title="Snap layer drags and text placement. Hold Shift to bypass."
               onClick={() => setGridSnapping((snapping) => !snapping)}>Snap</button>
+            <button type="button" aria-label="Snap to canvas" aria-pressed={canvasSnapping}
+              title="Snap to canvas center, edges, and padding. Hold Shift to bypass."
+              onClick={() => setCanvasSnapping((snapping) => !snapping)}>Guides</button>
             <button
               type="button"
               onClick={() => {
@@ -1875,7 +1905,35 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     }}
                   />
                 </label>
-                <p className="tool-hint">Grid and snapping are editing aids, not part of your export. Hold Shift while dragging to bypass snapping.</p>
+                <label>
+                  Snap padding (px)
+                  <input
+                    key={snapPadding}
+                    type="number"
+                    min="0"
+                    max="512"
+                    step="1"
+                    aria-label="Snap padding"
+                    defaultValue={snapPadding}
+                    onBlur={(event) => {
+                      const padding = Number(event.currentTarget.value);
+                      if (event.currentTarget.value.trim() && Number.isInteger(padding) && padding >= 0 && padding <= 512) {
+                        setSnapPadding(padding);
+                      } else event.currentTarget.value = String(snapPadding);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.currentTarget.value = String(snapPadding);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </label>
+                <p className="tool-hint">Grid and guides are editing aids, not part of your export. Guides snap to canvas center, edges, and padding. Hold Shift while dragging to bypass snapping.</p>
               </div>
 
               {selectedLayer ? (
@@ -2266,6 +2324,18 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 }
               />
             ) : null}
+          {!imageCrop && snapGuides.map((guide) => (
+            <div
+              key={guide.axis}
+              className={`snap-guide ${guide.axis === "x" ? "vertical" : "horizontal"}`}
+              aria-hidden="true"
+              style={guide.axis === "x"
+                ? { left: guide.position, top: 0, height: project.canvasHeight, borderLeftWidth: 1 / project.zoom }
+                : { left: 0, top: guide.position, width: project.canvasWidth, borderTopWidth: 1 / project.zoom }}
+            >
+              <span style={{ transform: `scale(${1 / project.zoom})` }}>{guide.label}</span>
+            </div>
+          ))}
             {imageCrop ? (
             <ImageCrop
               layer={imageCrop.layer}
