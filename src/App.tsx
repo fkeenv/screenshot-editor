@@ -72,6 +72,7 @@ import { PresentedText } from "./PresentedText";
 import { ImageCrop } from "./ImageCrop";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
+import { prepareImageImport, transferredImage } from "./image-intake";
 
 const PRESETS = [
   { width: 800, height: 600 },
@@ -97,37 +98,6 @@ const FONT_FAMILIES = [
   "Georgia",
   "Courier New",
 ] as const;
-
-function readImage(file: PickedFile, mediaType: string): Promise<{
-  source: string;
-  width: number;
-  height: number;
-}> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("The image could not be read."));
-    reader.onload = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("The image could not be read."));
-        return;
-      }
-
-      const source = reader.result;
-      const image = new Image();
-      image.onerror = () => reject(new Error("The image could not be decoded."));
-      image.onload = () =>
-        resolve({
-          source,
-          width: image.naturalWidth,
-          height: image.naturalHeight,
-        });
-      image.src = source;
-    };
-    const copy = new Uint8Array(file.bytes.byteLength);
-    copy.set(file.bytes);
-    reader.readAsDataURL(new Blob([copy.buffer], { type: mediaType }));
-  });
-}
 
 const EXPORT_EXTENSION: Record<ExportFormat, string> = {
   png: "png",
@@ -447,6 +417,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   const chatDraftRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const [imageDropActive, setImageDropActive] = useState(false);
   const toolPanelRef = useRef<HTMLElement>(null);
   const selectedLayer = project.layers.find(
     (layer) => layer.id === selectedLayerId,
@@ -575,23 +546,14 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setProject((current) => setView(current, zoom, 0, 0));
   }
 
-  async function importImage() {
+  async function receiveImage(file: PickedFile | File) {
     try {
-      const [file] = await files.importImages();
-      if (!file) return;
-
-      const format = supportedImageFormat(file.name, "");
-      if (!format) {
-        setImportError("Choose a JPG, PNG, WebP, GIF, or BMP image.");
-        return;
-      }
-      const image = await readImage(file, format);
+      const image = await prepareImageImport(file);
+      for (const layerId of [...layerInteractions.current.keys()]) cancelLayerInteractions(layerId);
       const id = crypto.randomUUID();
       setProject((current) =>
         addImageLayer(current, {
           id,
-          name: file.name,
-          format,
           ...image,
         }),
       );
@@ -606,6 +568,27 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       );
     }
   }
+
+  async function importImage() {
+    try {
+      const [file] = await files.importImages();
+      if (file) await receiveImage(file);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "The image could not be imported.");
+    }
+  }
+
+  useEffect(() => {
+    function onPaste(event: ClipboardEvent) {
+      if (imageCrop || (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]"))) return;
+      const file = event.clipboardData && transferredImage(event.clipboardData);
+      if (!file) return;
+      event.preventDefault();
+      void receiveImage(file);
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [imageCrop]);
 
   async function openProjectFile() {
     try {
@@ -1653,7 +1636,30 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         className={`viewport${placingText ? " placing-text" : ""}`}
         ref={viewportRef}
         onPointerDown={onViewportPointerDown}
+        onDragOver={(event) => {
+          if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+          event.preventDefault();
+          const file = transferredImage(event.dataTransfer);
+          const valid = !imageCrop && (file
+            ? Boolean(supportedImageFormat(file.name, file.type))
+            : Array.from(event.dataTransfer.items).some((item) => item.kind === "file" && (!item.type || Boolean(supportedImageFormat("", item.type)))));
+          event.dataTransfer.dropEffect = valid ? "copy" : "none";
+          setImageDropActive(valid);
+        }}
+        onDragLeave={(event) => {
+          if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setImageDropActive(false);
+        }}
+        onDrop={(event) => {
+          if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+          event.preventDefault();
+          setImageDropActive(false);
+          if (imageCrop) return;
+          const file = transferredImage(event.dataTransfer);
+          if (file) void receiveImage(file);
+          else setImportError("Choose a JPG, PNG, WebP, GIF, or BMP image.");
+        }}
       >
+        {imageDropActive ? <div className="image-drop-target" role="status">Drop screenshot here<span>Only the first image is imported.</span></div> : null}
         {imageCrop ? (
           <div className="image-crop-toolbar" role="toolbar" aria-label="Crop actions" onPointerDown={(event) => event.stopPropagation()}>
             <div>
@@ -1673,7 +1679,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             <div className="welcome-card">
               <span className="welcome-eyebrow">New canvas</span>
               <h1>Start here</h1>
-              <p>Choose a screenshot, open a saved project, or work on a blank canvas.</p>
+              <p>Choose a screenshot, paste an image, or drop one here. Only the first image is imported. You can also open a saved project or start blank.</p>
               <div className="welcome-actions">
                 <button type="button" className="welcome-primary" onClick={() => void importImage()}>
                   Choose screenshot

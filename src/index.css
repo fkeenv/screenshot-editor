@@ -521,6 +521,27 @@ button:disabled {
   margin: 0;
 }
 
+.image-drop-target {
+  position: absolute;
+  inset: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 24px;
+  pointer-events: none;
+}
+
+.image-drop-target span {
+  font-size: 14px;
+}
+
 .viewport.placing-text,
 .viewport.placing-text .canvas,
 .viewport.placing-text .canvas-layer {
