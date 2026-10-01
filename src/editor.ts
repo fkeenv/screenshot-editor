@@ -361,7 +361,9 @@ export type Project = Snapshot & {
 
 type ProjectFile = {
   version: 1;
-  project: Snapshot;
+  project: Omit<Snapshot, "canvasBackground"> & {
+    canvasBackground?: CanvasBackground;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -439,7 +441,7 @@ function isCanvasBackground(value: unknown): value is CanvasBackground {
   );
 }
 
-function isSnapshot(value: unknown): value is Snapshot {
+function isSnapshot(value: unknown): value is ProjectFile["project"] {
   return (
     isRecord(value) &&
     (value.canvasBackground === undefined ||

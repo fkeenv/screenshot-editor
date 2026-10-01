@@ -1553,11 +1553,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   <select
                     aria-label="Canvas background"
                     value={project.canvasBackground.kind}
-                    onChange={(event) => changeCanvasBackground(
-                      event.target.value === "solid"
-                        ? { kind: "solid", color: "#ffffff" }
-                        : { kind: "transparent" },
-                    )}
+                    onChange={(event) =>
+                      changeCanvasBackground(
+                        event.target.value === "solid"
+                          ? { kind: "solid", color: "#ffffff" }
+                          : { kind: "transparent" },
+                      )
+                    }
                   >
                     <option value="transparent">Transparent</option>
                     <option value="solid">Solid color</option>
@@ -1569,8 +1571,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     aria-label="Canvas background color"
                     type="color"
                     disabled={project.canvasBackground.kind === "transparent"}
-                    value={project.canvasBackground.kind === "solid" ? project.canvasBackground.color : "#ffffff"}
-                    onChange={(event) => changeCanvasBackground({ kind: "solid", color: event.target.value })}
+                    value={project.canvasBackground.kind === "solid"
+                      ? project.canvasBackground.color : "#ffffff"}
+                    onChange={(event) => changeCanvasBackground({
+                      kind: "solid", color: event.target.value,
+                    })}
                   />
                 </label>
               </div>
@@ -1783,7 +1788,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
           }}
         >
-          <div className="canvas-content" style={{ backgroundColor: project.canvasBackground.kind === "solid" ? project.canvasBackground.color : undefined }}>
+          <div
+            className="canvas-content"
+            style={{ backgroundColor: project.canvasBackground.kind === "solid"
+              ? project.canvasBackground.color : undefined }}
+          >
             {presentProject(presentationProject, measureDomText).map((layer) => {
               if (layer.kind === "image") {
                 const styles = imageLayerStyles(layer);
