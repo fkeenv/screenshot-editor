@@ -55,7 +55,7 @@ export function ImagePositionControls({
   onPosition: (axis: "x" | "y", value: number) => void;
 }) {
   return (
-    <div className="control-group image-position-control">
+    <div className="control-group flex flex-wrap gap-[8px] items-end image-position-control grid">
       <span>Position (px)</span>
       <div className="position-fields">
         {(["x", "y"] as const).map((axis) => (

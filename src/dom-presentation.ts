@@ -46,6 +46,9 @@ export function textLayerStyles(text: TextLayerPresentation) {
       fontWeight: text.font.weight,
       lineHeight: `${text.lineHeight}px`,
       WebkitTextStroke: `${text.outline.width}px ${text.outline.color}`,
+      ...(text.shadow ? {
+        textShadow: `${text.shadow.offsetX}px ${text.shadow.offsetY}px ${text.shadow.blur}px ${text.shadow.color}`,
+      } : {}),
       opacity: text.opacity,
       overflowWrap: "normal" as const,
       whiteSpace: "pre" as const,

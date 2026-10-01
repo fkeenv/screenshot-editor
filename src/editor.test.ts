@@ -81,6 +81,49 @@ test("invalid or unchanged background choices do not add history, and malformed 
   );
 });
 
+test("new chat text defaults to bold lettering with a thin outline and soft shadow", () => {
+  expect(addTextLayer(openProject(), "chat").layers[0]).toMatchObject({
+    fontFamily: "Arial",
+    fontSize: 14,
+    bold: true,
+    outlineWidth: 1,
+    shadow: { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" },
+  });
+});
+
+test("shadow edits are undoable, saved, and optional in older projects", () => {
+  const original = addTextLayer(openProject(), "chat");
+  const edited = editTextLayer(original, "chat", {
+    shadow: { offsetX: -2, offsetY: 3, blur: 1, color: "#123456" },
+  });
+  expect(openSavedProject(saveProject(edited)).layers[0]).toMatchObject({
+    shadow: { offsetX: -2, offsetY: 3, blur: 1, color: "#123456" },
+  });
+  expect(undo(edited).layers).toEqual(original.layers);
+  expect(redo(undo(edited)).layers).toEqual(edited.layers);
+  const legacy = JSON.parse(saveProject(original));
+  delete legacy.project.layers[0].shadow;
+  Object.assign(legacy.project.layers[0], {
+    fontSize: 24,
+    bold: false,
+    outlineWidth: 2,
+  });
+  expect(openSavedProject(JSON.stringify(legacy)).layers[0]).toMatchObject({
+    fontSize: 24,
+    bold: false,
+    outlineWidth: 2,
+  });
+  expect(openSavedProject(JSON.stringify(legacy)).layers[0]).not.toHaveProperty(
+    "shadow",
+  );
+});
+
+test("malformed saved shadows are rejected", () => {
+  const file = JSON.parse(saveProject(addTextLayer(openProject(), "chat")));
+  file.project.layers[0].shadow.blur = -1;
+  expect(() => openSavedProject(JSON.stringify(file))).toThrow("not a valid");
+});
+
 const TEST_IMAGE = {
   id: "image-1",
   name: "Screenshot",
@@ -261,6 +304,7 @@ test("duplicating styled text preserves its content and keeps later edits indepe
     bold: true,
     outlineWidth: 3,
     outlineColor: "#112233",
+    shadow: undefined,
     lineSpacing: 1.5,
     wrapWidth: 280,
   });
@@ -577,10 +621,11 @@ test("adding a text box creates a layer separate from the canvas", () => {
       x: 32,
       y: 32,
       fontFamily: "Arial",
-      fontSize: 24,
-      bold: false,
-      outlineWidth: 2,
+      fontSize: 14,
+      bold: true,
+      outlineWidth: 1,
       outlineColor: "#000000",
+      shadow: { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" },
       lineSpacing: 1.2,
       wrapWidth: 400,
     },
@@ -1055,8 +1100,8 @@ test("undo and redo restore text, style, and position", () => {
   const editUndone = undo(moveUndone);
   expect(editUndone.layers[0]).toMatchObject({
     text: "Text",
-    fontSize: 24,
-    bold: false,
+    fontSize: 14,
+    bold: true,
     wrapWidth: 400,
   });
 

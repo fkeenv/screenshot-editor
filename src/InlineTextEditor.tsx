@@ -1,7 +1,7 @@
 import { Color, TextStyle } from "@tiptap/extension-text-style";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { useEffect, useRef, type FocusEvent, type MutableRefObject } from "react";
 import {
   contentToDocument,
   documentToContent,
@@ -12,10 +12,18 @@ import {
 import type { TextLayerPresentation } from "./presentation";
 import { PresentedText } from "./PresentedText";
 
+function isTextColorControl(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest("[data-text-color-control]"))
+  );
+}
+
 export type TextEditorHandle = {
   applyColor: (color: string) => void;
   focus: () => void;
   preserveOnBlur: () => void;
+  commit: () => void;
 };
 
 export function InlineTextEditor({
@@ -77,14 +85,15 @@ export function InlineTextEditor({
     onUpdate: ({ editor: current }) => {
       onPreview(documentToContent(current.getJSON()));
     },
-    onBlur: ({ editor: current }) => {
-      if (preserveBlur.current) return;
+    onBlur: ({ editor: current, event }) => {
+      if (preserveBlur.current || isTextColorControl(event.relatedTarget)) return;
       onCommit(documentToContent(current.getJSON()));
     },
   });
 
-  function commit() {
-    if (!editor || preserveBlur.current) return;
+  function commit(event: FocusEvent) {
+    if (!editor || preserveBlur.current || isTextColorControl(event.relatedTarget))
+      return;
     onCommit(documentToContent(editor.getJSON()));
   }
 
@@ -123,6 +132,10 @@ export function InlineTextEditor({
     preserveOnBlur: () => {
       preserveBlur.current = true;
     },
+    commit: () => {
+      preserveBlur.current = false;
+      if (editor) onCommit(documentToContent(editor.getJSON()));
+    },
   };
 
   useEffect(() => {
@@ -134,7 +147,7 @@ export function InlineTextEditor({
 
   return (
     <div className="inline-text-editor-shell">
-      <div className="inline-text-preview" aria-hidden="true">
+      <div className="inline-text-preview pointer-events-none" aria-hidden="true">
         <PresentedText text={presentation} />
       </div>
       <EditorContent

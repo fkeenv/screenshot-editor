@@ -110,6 +110,9 @@ test("project presentation wraps multiline text and long words", () => {
   let project = addTextLayer(openProject(), "caption", { x: 12, y: 18 });
   project = editTextLayer(project, "caption", {
     text: "one two\nLONGWORD",
+    bold: false,
+    outlineWidth: 2,
+    shadow: undefined,
     fontFamily: "Courier New",
     fontSize: 10,
     lineSpacing: 1.5,

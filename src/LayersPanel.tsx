@@ -93,12 +93,12 @@ function LayerRow({
         </ActionIcon>
         <button
           type="button"
-          className="layer-select"
+          className="layer-select flex flex-1 min-w-0 items-center gap-[5px] py-[4px] px-[5px] bg-transparent border-0 text-left"
           aria-pressed={selectedLayerId === layer.id}
           onClick={() => actions.select(layer.id)}
         >
           <span>{layer.name}</span>
-          <span className="layer-kind">{layer.kind}</span>
+          <span className="layer-kind flex-none text-muted text-[10px] uppercase">{layer.kind}</span>
         </button>
       </Group>
     </Paper>
@@ -121,7 +121,7 @@ export function SelectedLayerControls({
   );
 
   return (
-    <div className="selected-layer-controls">
+    <div className="selected-layer-controls grid gap-[14px] mt-[12px]">
       <label>
         Name
         <TextInput
@@ -142,7 +142,7 @@ export function SelectedLayerControls({
           }}
         />
       </label>
-      <div className="layer-order-controls">
+      <div className="layer-order-controls flex items-center justify-between gap-[8px] text-muted text-[12px]">
         <span>Layer order</span>
         <div>
           <ActionIcon
@@ -266,18 +266,7 @@ export function LayersPanel({
       component="aside"
       aria-label="Layers"
       inert={inert}
-      w={{ base: 220, sm: 280 }}
-      miw={{ base: 220, sm: 280 }}
-      style={{
-        gridColumn: 3,
-        gridRow: 2,
-        background: "var(--panel-bg)",
-        display: "flex",
-        flex: "0 0 auto",
-        flexDirection: "column",
-        overflow: "hidden",
-        borderLeft: "1px solid var(--border)",
-      }}
+      className="layers-panel flex min-h-0 min-w-0 flex-col overflow-hidden bg-panel"
     >
       <Group h={42} px="sm" justify="space-between">
         <Text fw={600} size="sm">
