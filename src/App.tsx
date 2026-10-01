@@ -35,12 +35,14 @@ import {
   scaleImageLayer,
   saveProject,
   setCanvasSize,
+  setCanvasBackground,
   setLayerVisibility,
   setView,
   supportedImageFormat,
   TEXT_COLOR_PRESETS,
   undo,
   type ImageLayer,
+  type CanvasBackground,
   type ImageResizeCorner,
   type Project,
   type TextContent,
@@ -459,6 +461,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     for (const cancel of [...(layerInteractions.current.get(layerId) ?? [])]) {
       cancel();
     }
+  }
+
+  function changeCanvasBackground(background: CanvasBackground) {
+    for (const layerId of [...layerInteractions.current.keys()]) {
+      cancelLayerInteractions(layerId);
+    }
+    setProject((current) => setCanvasBackground(current, background));
   }
 
   function deleteSelectedLayer(layerId = selectedLayerId) {
@@ -1368,6 +1377,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           {activeMenu === "Export" ? (
             <div className="control-group">
               <span className="panel-heading">Export settings</span>
+              <p className="tool-hint">
+                PNG and WebP keep transparent backgrounds. JPG uses the chosen
+                solid background, or #111827 for transparent projects. Stitch
+                uses each saved project's background.
+              </p>
               <label>
                 Export
                 <select
@@ -1532,6 +1546,34 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                   </>
                 ) : null}
               </form>
+
+              <div className="control-group">
+                <label>
+                  Canvas background
+                  <select
+                    aria-label="Canvas background"
+                    value={project.canvasBackground.kind}
+                    onChange={(event) => changeCanvasBackground(
+                      event.target.value === "solid"
+                        ? { kind: "solid", color: "#ffffff" }
+                        : { kind: "transparent" },
+                    )}
+                  >
+                    <option value="transparent">Transparent</option>
+                    <option value="solid">Solid color</option>
+                  </select>
+                </label>
+                <label>
+                  Background color
+                  <input
+                    aria-label="Canvas background color"
+                    type="color"
+                    disabled={project.canvasBackground.kind === "transparent"}
+                    value={project.canvasBackground.kind === "solid" ? project.canvasBackground.color : "#ffffff"}
+                    onChange={(event) => changeCanvasBackground({ kind: "solid", color: event.target.value })}
+                  />
+                </label>
+              </div>
 
               {selectedLayer ? (
                 <>
@@ -1741,7 +1783,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
             transform: `translate(${project.panX}px, ${project.panY}px) scale(${project.zoom})`,
           }}
         >
-          <div className="canvas-content">
+          <div className="canvas-content" style={{ backgroundColor: project.canvasBackground.kind === "solid" ? project.canvasBackground.color : undefined }}>
             {presentProject(presentationProject, measureDomText).map((layer) => {
               if (layer.kind === "image") {
                 const styles = imageLayerStyles(layer);

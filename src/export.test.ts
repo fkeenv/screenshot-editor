@@ -9,6 +9,7 @@ import {
   moveLayer,
   openProject,
   setCanvasSize,
+  setCanvasBackground,
   setLayerOpacity,
   setLayerVisibility,
   setView,
@@ -21,6 +22,100 @@ import {
 } from "./export";
 
 const require = createRequire(import.meta.url);
+
+test.each(["png", "webp"] as const)(
+  "%s stitch preserves each project's background and transparent padding",
+  async (format) => {
+    const red = setCanvasBackground(setCanvasSize(openProject(), 2, 1), {
+      kind: "solid",
+      color: "#ff0000",
+    });
+    const transparent = setCanvasSize(openProject(), 4, 1);
+    const blue = setCanvasBackground(setCanvasSize(openProject(), 1, 1), {
+      kind: "solid",
+      color: "#0000ff",
+    });
+    const image = await readPixels(
+      (
+        await exportStitch([red, transparent, blue], {
+          format,
+          quality: 100,
+          lossless: true,
+        })
+      ).bytes,
+    );
+    expect(Array.from(image.data)).toEqual([
+      255,
+      0,
+      0,
+      255,
+      255,
+      0,
+      0,
+      255,
+      ...Array(8).fill(0),
+      ...Array(16).fill(0),
+      0,
+      0,
+      255,
+      255,
+      ...Array(12).fill(0),
+    ]);
+  },
+);
+
+test("JPEG stitch uses each solid background and the fallback for transparent screens and padding", async () => {
+  const red = setCanvasBackground(setCanvasSize(openProject(), 8, 16), {
+    kind: "solid",
+    color: "#ff0000",
+  });
+  const transparent = setCanvasSize(openProject(), 16, 16);
+  const blue = setCanvasBackground(setCanvasSize(openProject(), 16, 16), {
+    kind: "solid",
+    color: "#0000ff",
+  });
+  const image = await readPixels(
+    (
+      await exportStitch([red, transparent, blue], {
+        format: "jpeg",
+        quality: 100,
+      })
+    ).bytes,
+  );
+  function pixel(x: number, y: number) {
+    return Array.from(image.data.slice((y * 16 + x) * 4, (y * 16 + x) * 4 + 4));
+  }
+  for (const [actual, expected] of [
+    [pixel(3, 8), [255, 0, 0, 255]],
+    [pixel(12, 8), [17, 24, 39, 255]],
+    [pixel(8, 24), [17, 24, 39, 255]],
+    [pixel(8, 40), [0, 0, 255, 255]],
+  ]) {
+    expected.forEach((channel, index) =>
+      expect(actual[index]).toBeCloseTo(channel, -1),
+    );
+  }
+});
+
+test.each(["png", "webp", "jpeg"] as const)(
+  "%s uses a saved solid canvas background instead of preview colors",
+  async (format) => {
+    const project = setCanvasBackground(setCanvasSize(openProject(), 2, 2), {
+      kind: "solid",
+      color: "#ff0000",
+    });
+    const image = await readPixels(
+      (await exportFlattened(project, { format, quality: 100, lossless: true }))
+        .bytes,
+    );
+    for (let offset = 0; offset < image.data.length; offset += 4) {
+      expect(image.data[offset]).toBeGreaterThanOrEqual(253);
+      expect(image.data[offset + 1]).toBeLessThanOrEqual(2);
+      expect(image.data[offset + 2]).toBeLessThanOrEqual(2);
+      expect(image.data[offset + 3]).toBe(255);
+    }
+  },
+);
 
 beforeAll(async () => {
   prepareExportEnvironment({
