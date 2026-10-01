@@ -1,6 +1,7 @@
 export type PickedFile = {
   name: string;
   bytes: Uint8Array;
+  mediaType?: string;
 };
 
 export type OpenDialogRequest = {
@@ -77,6 +78,7 @@ function chooseFiles(request: OpenDialogRequest): Promise<PickedFile[]> {
         void Promise.all(
           selected.map(async (file) => ({
             name: file.name,
+            mediaType: file.type,
             bytes: new Uint8Array(await file.arrayBuffer()),
           })),
         ).then(resolve, reject);

@@ -183,6 +183,231 @@ async function keyDown(key: string, target: HTMLElement = document.body) {
   );
 }
 
+function stubImageDecode() {
+  vi.stubGlobal(
+    "Image",
+    class {
+      naturalWidth = 80;
+      naturalHeight = 40;
+      onload?: () => void;
+      onerror?: () => void;
+      set src(value: string) {
+        queueMicrotask(() =>
+          value.includes("Y29ycnVwdA==") ? this.onerror?.() : this.onload?.(),
+        );
+      }
+    },
+  );
+}
+
+async function transferEvent(
+  type: string,
+  files: File[],
+  target: HTMLElement = document.body,
+) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  const transfer = {
+    files,
+    types: ["Files"],
+    getData: () => "",
+    items: files.map((file) => ({
+      kind: "file",
+      type: file.type,
+      getAsFile: () => file,
+    })),
+  };
+  Object.defineProperty(
+    event,
+    type === "paste" ? "clipboardData" : "dataTransfer",
+    { value: transfer },
+  );
+  await act(async () => {
+    target.dispatchEvent(event);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  return event;
+}
+
+test("clipboard import selects one image and survives save/open and undo/redo", async () => {
+  stubImageDecode();
+  await mount();
+  const event = await transferEvent("paste", [
+    new File(["png"], "Paste.png", { type: "image/png" }),
+    new File(["png"], "Ignored.png", { type: "image/png" }),
+  ]);
+  expect(event.defaultPrevented).toBe(true);
+  expect(layerButton("Paste.png").getAttribute("aria-pressed")).toBe("true");
+  const project = await openSavedProjectFromEditor();
+  expect(project.layers).toHaveLength(4);
+  expect(project.layers[3]).toMatchObject({
+    name: "Paste.png",
+    crop: { width: 80, height: 40 },
+  });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(3);
+  await click("Redo");
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(4);
+});
+
+test("external drop shows feedback and imports without navigating; unrelated drops are safe", async () => {
+  stubImageDecode();
+  await mount();
+  const viewport = container.querySelector<HTMLElement>(".viewport")!;
+  const image = new File(["png"], "Drop.png", { type: "image/png" });
+  expect(
+    (await transferEvent("dragover", [image], viewport)).defaultPrevented,
+  ).toBe(true);
+  expect(viewport.textContent).toContain("Drop screenshot here");
+  expect(
+    (await transferEvent("drop", [image], viewport)).defaultPrevented,
+  ).toBe(true);
+  expect(layerButton("Drop.png").getAttribute("aria-pressed")).toBe("true");
+  expect(viewport.textContent).not.toContain("Drop screenshot here");
+  expect(
+    (await transferEvent("drop", [new File(["text"], "note.txt")], viewport))
+      .defaultPrevented,
+  ).toBe(true);
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(4);
+});
+
+test("unsupported first image is accepted for an error, without valid-drop feedback for a later image", async () => {
+  await mount();
+  const viewport = container.querySelector<HTMLElement>(".viewport")!;
+  const transfer = {
+    files: [],
+    types: ["Files"],
+    dropEffect: "none",
+    items: [
+      { kind: "file", type: "image/svg+xml", getAsFile: () => null },
+      { kind: "file", type: "image/png", getAsFile: () => null },
+    ],
+  };
+  const event = new Event("dragover", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: transfer });
+  await act(async () => viewport.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(transfer.dropEffect).toBe("copy");
+  expect(viewport.textContent).not.toContain("Drop screenshot here");
+});
+
+test.each(["paste", "drop"])(
+  "invalid %s images leave selection, project and history intact",
+  async (delivery) => {
+    stubImageDecode();
+    await mount();
+    await selectLayer("Top.png");
+    const before = saveProject(await openSavedProjectFromEditor());
+    const target =
+      delivery === "drop"
+        ? container.querySelector<HTMLElement>(".viewport")!
+        : document.body;
+    await transferEvent(
+      delivery,
+      [
+        new File(["svg"], "first.svg", { type: "image/svg+xml" }),
+        new File(["png"], "second.png", { type: "image/png" }),
+      ],
+      target,
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Choose a JPG",
+    );
+    await transferEvent(
+      delivery,
+      [new File(["corrupt"], "broken.png", { type: "image/png" })],
+      target,
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "could not be decoded",
+    );
+    expect(saveProject(await openSavedProjectFromEditor())).toBe(before);
+    expect(layerButton("Top.png").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Undo").disabled).toBe(true);
+  },
+);
+
+test("picker uses the same image import and decode errors", async () => {
+  stubImageDecode();
+  await mount();
+  window.screenshotEditorFiles!.open = async () => [
+    { name: "Picker.png", bytes: new TextEncoder().encode("png") },
+  ];
+  await act(async () => {
+    button("Import image").click();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(layerButton("Picker.png").getAttribute("aria-pressed")).toBe("true");
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(4);
+});
+
+test("text fields and inline editor retain clipboard paste; plain text does not import", async () => {
+  stubImageDecode();
+  await mount();
+  await click("Chat");
+  const image = new File(["png"], "NoImport.png", { type: "image/png" });
+  const chat = container.querySelector<HTMLTextAreaElement>("textarea")!;
+  expect((await transferEvent("paste", [image], chat)).defaultPrevented).toBe(
+    false,
+  );
+  await selectLayer("Text");
+  await act(async () =>
+    container
+      .querySelector<HTMLElement>(".text-layer")!
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  const editable = container.querySelector<HTMLElement>(
+    '[contenteditable="true"]',
+  )!;
+  expect(editable).not.toBeNull();
+  expect(
+    (await transferEvent("paste", [image], editable)).defaultPrevented,
+  ).toBe(false);
+  await keyDown("Escape", editable);
+  expect(
+    (await transferEvent("paste", [], document.body)).defaultPrevented,
+  ).toBe(false);
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(3);
+});
+
+test("internal layer reorder drops still change stack order", async () => {
+  await mount();
+  const transfer = {
+    types: ["text/plain"],
+    setData() {},
+    getData: () => "top",
+  };
+  async function drag(target: HTMLElement, type: string) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: transfer });
+    await act(async () => target.dispatchEvent(event));
+  }
+  await drag(button("Drag Top.png to reorder"), "dragstart");
+  const list = container.querySelector('[role="list"]')!;
+  await drag(list.lastElementChild as HTMLElement, "dragover");
+  await drag(list.lastElementChild as HTMLElement, "drop");
+  expect(
+    (await openSavedProjectFromEditor()).layers.map((layer) => layer.id),
+  ).toEqual(["top", "bottom", "middle"]);
+});
+
+test("pasting during an image drag keeps the import when the old pointer releases", async () => {
+  stubImageDecode();
+  await mount();
+  await selectLayer("Top.png");
+  const layer = [...container.querySelectorAll<HTMLElement>(".image-layer")].at(
+    -1,
+  )!;
+  await pointer(layer, "pointerdown", 10, 10);
+  await pointer(layer, "pointermove", 25, 25);
+  await transferEvent("paste", [
+    new File(["png"], "Paste.png", { type: "image/png" }),
+  ]);
+  await pointer(layer, "pointerup", 25, 25);
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(4);
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers).toHaveLength(3);
+});
+
 async function pointer(target: Element, type: string, x: number, y = 0) {
   const event = new MouseEvent(type, {
     bubbles: true,
