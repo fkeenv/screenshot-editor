@@ -13,6 +13,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Verify release version
+        run: node desktop/release-version.cjs
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

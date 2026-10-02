@@ -99,4 +99,6 @@ Versions use CalVer: `YYYY.M.PATCH`, such as `2026.10.0`. The final number incre
 
 To make a new version discoverable by the Windows app, update the version in `package.json` and `package-lock.json`, build the Windows installer, and publish a stable GitHub release tagged with that version (for example, `v2026.10.1`). Attach the finished `.exe` installer before publishing and mark the release as the latest release. Draft releases, prereleases, and releases without an uploaded installer are not announced. Uploading a CI artifact alone does not publish a release.
 
+Set both package files together with `npm version 2026.10.1 --no-git-tag-version` (replace the version as needed), then commit and push **before** creating the release tag. Run the Windows desktop workflow on that tag or on the updated `main`. Rerunning an old workflow run rebuilds its original commit, not the newest source. The workflow checks that the package, lockfile, and release tag versions match before building.
+
 See [release notes](CHANGELOG.md) for the current feature overview. Existing projects remain supported, but projects containing rectangle layers may not open in older builds.
