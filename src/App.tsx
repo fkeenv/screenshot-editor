@@ -77,10 +77,9 @@ import {
 import { presentProject } from "./presentation";
 import { PresentedText } from "./PresentedText";
 import { ImageCrop } from "./ImageCrop";
-import { ImageResizeHandles } from "./ImageResizeHandles";
+import { LayerResizeHandles } from "./LayerResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
 import { RectangleControls } from "./RectangleControls";
-import { snapToGrid } from "./grid";
 import { snapLayerPosition, type SnapGuide } from "./snapping";
 import {
   prepareImageImport,
@@ -89,7 +88,7 @@ import {
 } from "./image-intake";
 
 const PRESETS = [
-  { width: 800, height: 600 },
+  { width: 1920, height: 1080 },
   { width: 1150, height: 600 },
 ] as const;
 
@@ -569,12 +568,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     layerId: string;
     content: TextContent;
   }>();
-  const [placingText, setPlacingText] = useState(false);
   const [gridVisible, setGridVisible] = useState(false);
   const [gridSnapping, setGridSnapping] = useState(false);
   const [gridSpacing, setGridSpacing] = useState(20);
   const [canvasSnapping, setCanvasSnapping] = useState(false);
-  const [snapPadding, setSnapPadding] = useState(16);
+  const [snapPadding, setSnapPadding] = useState(20);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [layersPanelOpen, setLayersPanelOpen] = useState(true);
@@ -743,7 +741,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       );
       setSelectedLayerId(id);
       setActiveMenu("Properties");
-      setPlacingText(false);
       setWelcomeDismissed(true);
       setImportError(undefined);
     } catch (error) {
@@ -764,7 +761,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setSelectedLayerId(id);
     setActiveMenu("Properties");
     setToolsPanelOpen(true);
-    setPlacingText(false);
     setWelcomeDismissed(true);
   }
 
@@ -814,7 +810,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       setActiveMenu("Properties");
       setWelcomeDismissed(true);
       resetTextEditing();
-      setPlacingText(false);
       setProjectFileError(undefined);
       setImportError(undefined);
     } catch (error) {
@@ -901,15 +896,9 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     });
   }
 
-  function cancelTextPlacement() {
-    setPlacingText(false);
-    chatDraftRef.current?.focus();
-  }
-
   function startImageCrop() {
     if (!selectedImageLayer) return;
     resetTextEditing();
-    setPlacingText(false);
     setImageCrop({
       layer: selectedImageLayer,
       crop: { ...selectedImageLayer.crop },
@@ -960,32 +949,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     setImageCrop(undefined);
   }
 
-  function placeTextBox(event: { clientX: number; clientY: number; shiftKey?: boolean }) {
-    if (!hasDraftText) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const border = Number.parseFloat(getComputedStyle(canvas).borderLeftWidth) || 0;
-    const x = (event.clientX - rect.left) / project.zoom - border;
-    const y = (event.clientY - rect.top) / project.zoom - border;
-    if (x < 0 || y < 0 || x > project.canvasWidth || y > project.canvasHeight) {
-      return;
-    }
-
-    const id = crypto.randomUUID();
-    const position = gridSnapping && !event.shiftKey
-      ? { x: snapToGrid(x, gridSpacing), y: snapToGrid(y, gridSpacing) }
-      : { x, y };
-    setProject((current) => addTextLayer(current, id, position, draftContent));
-    setSelectedLayerId(id);
-    resetTextEditing();
-    setChatDraft("");
-    setPlacingText(false);
-    setActiveMenu("Properties");
-    setWelcomeDismissed(true);
-  }
-
-  function resizeImage(
+  function resizeLayer(
     event: PointerEvent<HTMLButtonElement>,
     layerId: string,
     corner: ImageResizeCorner,
@@ -1002,7 +966,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
     handle.setPointerCapture(pointerId);
     function update(move: globalThis.PointerEvent): UndoableEditUpdate {
       return {
-        type: "resize-image",
+        type: selectedRectangleLayer?.id === layerId ? "resize-rectangle" : "resize-image",
         layerId,
         corner,
         screenDelta: { x: move.clientX - startX, y: move.clientY - startY },
@@ -1163,7 +1127,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   }
 
   function onViewportPointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (placingText || event.button !== 0) return;
+    if (event.button !== 0) return;
     if (!imageCrop && event.target instanceof Node &&
       !canvasRef.current?.contains(event.target)) {
       for (const layerId of [...layerInteractions.current.keys()]) {
@@ -1252,10 +1216,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
   ) {
     event.stopPropagation();
     if (imageCrop) return;
-    if (placingText) {
-      placeTextBox(event);
-      return;
-    }
     if (layer.kind === "text" && editingTextLayerId === layer.id) {
       event.preventDefault();
     }
@@ -1358,11 +1318,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         }
         return;
       }
-      if (event.key === "Escape" && placingText) {
-        event.preventDefault();
-        cancelTextPlacement();
-        return;
-      }
       if (
         event.target instanceof HTMLElement &&
         (event.target.matches(
@@ -1423,7 +1378,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedLayerId, placingText, imageCrop]);
+  }, [selectedLayerId, imageCrop]);
 
   const layerActions: LayerActions = {
     select: (layerId) => {
@@ -1541,13 +1496,13 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               title="Snap layer drags and text placement. Hold Shift to bypass."
               onClick={() => setGridSnapping((snapping) => !snapping)}>Snap</button>
             <button type="button" aria-label="Snap to canvas" aria-pressed={canvasSnapping}
-              title="Snap to canvas center, edges, and padding. Hold Shift to bypass."
+              title="Add canvas-edge and custom-padding snapping. Hold Shift to bypass."
+              aria-description="Center and 20px padding always snap. Guides adds canvas edges and custom padding."
               onClick={() => setCanvasSnapping((snapping) => !snapping)}>Guides</button>
             <button
               type="button"
               onClick={() => {
                 setActiveMenu("Stitch");
-                setPlacingText(false);
                 setToolsPanelOpen(true);
               }}
             >
@@ -1579,12 +1534,11 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       </header>
 
       <nav className="tool-rail col-start-1 row-start-2 flex w-[52px] flex-col items-center gap-[8px] py-[14px] bg-chrome" aria-label="Editor tools" inert={imageCrop ? true : undefined}>
-        <button type="button" title="Select" aria-label="Select" aria-pressed={!placingText} onClick={() => setPlacingText(false)}><EditorIcon name="select" /></button>
+        <button type="button" title="Select" aria-label="Select" aria-pressed={true}><EditorIcon name="select" /></button>
         <button type="button" title="Crop image" aria-label="Crop image" disabled={!selectedImageLayer} onClick={startImageCrop}><EditorIcon name="crop" /></button>
-        <button type="button" title="Add text" aria-label="Add text" aria-pressed={placingText} onClick={() => {
+        <button type="button" title="Add text" aria-label="Add text" onClick={() => {
           setActiveMenu("Chat");
           setToolsPanelOpen(true);
-          setPlacingText(false);
           requestAnimationFrame(() => chatDraftRef.current?.focus());
         }}><EditorIcon name="text" /></button>
         <button
@@ -1613,7 +1567,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 key={menu}
                 onClick={() => {
                   setActiveMenu(menu);
-                  if (menu !== "Chat") setPlacingText(false);
                 }}
               >
                 {menu}
@@ -1624,7 +1577,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
           {activeMenu === "Chat" ? (
             <div className="chat-draft grid gap-[12px]">
               <span className="panel-heading w-full text-editor-strong text-[13px] font-bold">Draft chat</span>
-              <p>Type or paste chat lines, then place them on the canvas.</p>
+              <p>Type or paste chat lines. Place on canvas adds them immediately; drag the text to arrange it.</p>
               <label>
                 Chat text
                 <textarea
@@ -1642,25 +1595,33 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               <button
                 type="button"
                 className="chat-place-action"
-                disabled={!hasDraftText || placingText}
+                disabled={!hasDraftText}
                 onClick={() => {
-                  setPlacingText(true);
+                  for (const layerId of [...layerInteractions.current.keys()]) {
+                    cancelLayerInteractions(layerId);
+                  }
+                  textEditor.current?.commit();
+                  const id = crypto.randomUUID();
+                  setProject((current) => {
+                    const added = addTextLayer(current, id, { x: 20, y: 20 }, draftContent);
+                    const viewport = viewportRef.current;
+                    if (!viewport || viewport.clientWidth <= 48 || viewport.clientHeight <= 48) return added;
+                    const zoom = Math.min(
+                      current.zoom,
+                      (viewport.clientWidth - 48) / current.canvasWidth,
+                      (viewport.clientHeight - 48) / current.canvasHeight,
+                    );
+                    return { ...added, zoom, panX: 0, panY: 0 };
+                  });
+                  setSelectedLayerId(id);
+                  resetTextEditing();
+                  setChatDraft("");
+                  setActiveMenu("Properties");
                   setWelcomeDismissed(true);
                 }}
               >
                 Place on canvas
               </button>
-              {placingText ? (
-                <>
-                  <p>Click the canvas to place this text, or cancel to keep the draft.</p>
-                  <button
-                    type="button"
-                    onClick={cancelTextPlacement}
-                  >
-                    Cancel placement
-                  </button>
-                </>
-              ) : null}
             </div>
           ) : null}
           {activeMenu === "Export" ? (
@@ -1933,7 +1894,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     }}
                   />
                 </label>
-                <p className="tool-hint">Grid and guides are editing aids, not part of your export. Guides snap to canvas center, edges, and padding. Hold Shift while dragging to bypass snapping.</p>
+                <p className="tool-hint">Center and 20px padding always snap. Guides adds canvas edges and uses the padding above. Grid and guides never appear in exports. Hold Shift while dragging to bypass snapping.</p>
               </div>
 
               {selectedLayer ? (
@@ -1952,9 +1913,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                 </>
               ) : (
                 <p className="tool-hint inline-flex min-h-[34px] items-center self-end text-muted text-[12px]">
-                  {placingText
-                    ? "Click the canvas to place the text box."
-                    : "Select an image or text layer to edit its properties."}
+                  Select a layer to edit its properties.
                 </p>
               )}
 
@@ -2071,7 +2030,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
       ) : null}
 
       <div
-        className={`viewport relative col-start-2 row-start-2 flex-1 min-w-0 min-h-0 overflow-hidden cursor-grab bg-app touch-none${placingText ? " placing-text" : ""}`}
+        className="viewport relative col-start-2 row-start-2 flex-1 min-w-0 min-h-0 overflow-hidden cursor-grab bg-app touch-none"
         ref={viewportRef}
         onPointerDown={onViewportPointerDown}
         onDragOver={(event) => {
@@ -2162,11 +2121,6 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
         <div
           className={`canvas${imageCrop ? " cropping-image" : ""}`}
           ref={canvasRef}
-          onPointerDown={(event) => {
-            if (!placingText) return;
-            event.stopPropagation();
-            placeTextBox(event);
-          }}
           style={{
             width: project.canvasWidth,
             height: project.canvasHeight,
@@ -2272,7 +2226,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
                     ? (["nw", "ne", "sw", "se"] as const).map((corner) => (
                         <span
                           key={corner}
-                          className={`text-resize-handle absolute z-2 w-[10px] h-[10px] bg-white border-[1px] border-solid border-accent rounded-[1px] ${corner}`}
+                          className={`text-resize-handle absolute z-2 w-[10px] h-[10px] bg-white border-[1px] border-solid border-[#a1a1aa] rounded-[1px] ${corner}`}
                           onPointerDown={(event) =>
                             resizeTextBox(
                               event,
@@ -2315,15 +2269,22 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               style={{ backgroundSize: `${gridSpacing}px ${gridSpacing}px` }}
             />
           ) : null}
-          {selectedImageLayer?.visible && !imageCrop && !placingText ? (
-              <ImageResizeHandles
+          {selectedImageLayer?.visible && !imageCrop ? (
+              <LayerResizeHandles
                 layer={selectedImageLayer}
                 zoom={project.zoom}
                 onStart={(event, corner) =>
-                  resizeImage(event, selectedImageLayer.id, corner)
+                  resizeLayer(event, selectedImageLayer.id, corner)
                 }
               />
             ) : null}
+          {selectedRectangleLayer?.visible && !imageCrop ? (
+            <LayerResizeHandles
+              layer={selectedRectangleLayer}
+              zoom={project.zoom}
+              onStart={(event, corner) => resizeLayer(event, selectedRectangleLayer.id, corner)}
+            />
+          ) : null}
           {!imageCrop && snapGuides.map((guide) => (
             <div
               key={guide.axis}

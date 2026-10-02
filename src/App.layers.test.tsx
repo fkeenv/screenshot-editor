@@ -13,7 +13,7 @@ import {
   addTextLayer,
   cropImageLayer,
   moveLayer,
-  openProject,
+  openProject as openNewProject,
   openSavedProject,
   saveProject,
   scaleImageLayer,
@@ -26,6 +26,10 @@ let root: Root;
 let container: HTMLDivElement;
 let saved: string | undefined;
 let editorStyles: string;
+
+function openProject(): Project {
+  return { ...openNewProject(), canvasWidth: 800, canvasHeight: 600 };
+}
 
 beforeAll(async () => {
   const stylesheet = await compile(readFileSync("src/index.css", "utf8"), {
@@ -244,8 +248,8 @@ test.each([
   ["center", 300, 240, "Center"],
   ["top left", 0, 0, "Edge"],
   ["bottom right", 600, 480, "Edge"],
-  ["padded top left", 16, 16, "Padding · 16px"],
-  ["padded bottom right", 584, 464, "Padding · 16px"],
+  ["padded top left", 20, 20, "Padding · 20px"],
+  ["padded bottom right", 580, 460, "Padding · 20px"],
 ] as const)("canvas snapping shows alignment lines at %s then removes them on release", async (_name, x, y, label) => {
   await mount(addRectangleLayer(openProject(), "rectangle"));
   await click("Snap to canvas");
@@ -374,7 +378,7 @@ test.each([
   await pointer(layer, "pointerdown", 100, 100);
   await pointer(layer, "pointermove", 100 + 23 * zoom, 100 + 12 * zoom);
   await pointer(layer, "pointerup", 100 + 23 * zoom, 100 + 12 * zoom);
-  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x: 40, y: 20 });
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ x: zoom === 0.5 ? 20 : 40, y: 20 });
   await click("Undo");
   expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
   expect(button("Undo").disabled).toBe(true);
@@ -400,8 +404,11 @@ test("snap preserves click-only selection, can be bypassed with Shift, and cance
   expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
 });
 
-test("text placement snaps in document pixels while grid lines remain outside project data", async () => {
+test("Place on canvas immediately creates selected chat with no outline in one undoable edit", async () => {
   await mount(setView(openProject(), 2, 50, -20));
+  const viewport = container.querySelector(".viewport")!;
+  Object.defineProperty(viewport, "clientWidth", { value: 1000 });
+  Object.defineProperty(viewport, "clientHeight", { value: 800 });
   await click("Snap to grid");
   await click("Chat");
   const draft = container.querySelector<HTMLTextAreaElement>('[aria-label="Chat draft"]')!;
@@ -410,14 +417,56 @@ test("text placement snaps in document pixels while grid lines remain outside pr
     draft.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await click("Place on canvas");
-  const canvas = container.querySelector(".canvas")!;
-  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 100, top: 50 } as DOMRect);
-  await pointer(canvas, "pointerdown", 173, 99);
   const savedProject = await openSavedProjectFromEditor();
-  expect(savedProject.layers[0]).toMatchObject({ kind: "text", x: 40, y: 20 });
+  expect(savedProject.layers[0]).toMatchObject({ kind: "text", x: 20, y: 20, outlineWidth: 0 });
+  expect(container.querySelector(".text-layer.selected")).not.toBeNull();
+  expect(container.textContent).not.toContain("Click the canvas to place");
   expect(savedProject).not.toHaveProperty("gridSpacing");
+  expect(savedProject).toMatchObject({ zoom: 952 / 800, panX: 0, panY: 0 });
   await click("Undo");
-  expect((await openSavedProjectFromEditor()).layers).toHaveLength(0);
+  expect(await openSavedProjectFromEditor()).toMatchObject({ layers: [], zoom: 2, panX: 50, panY: -20 });
+});
+
+test("new rectangles have resize handles and resize in document pixels with undo", async () => {
+  await mount(setView(openProject(), 2, 0, 0));
+  await click("Add rectangle");
+  const handle = container.querySelector('[aria-label="Resize rectangle bottom right"]');
+  expect(handle).not.toBeNull();
+  await pointer(handle!, "pointerdown", 100, 100);
+  await pointer(handle!, "pointermove", 180, 140);
+  await pointer(handle!, "pointerup", 180, 140);
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ width: 240, height: 140 });
+  await click("Undo");
+  expect((await openSavedProjectFromEditor()).layers[0]).toMatchObject({ width: 200, height: 120 });
+});
+
+test.each(["Escape", "pointercancel", "lostpointercapture"])("%s cancels rectangle resize and ignores a late release", async (cancel) => {
+  const project = addRectangleLayer(openProject(), "shape");
+  await mount(project);
+  await selectLayer("Rectangle");
+  const handle = container.querySelector('[aria-label="Resize rectangle top left"]')!;
+  await pointer(handle, "pointerdown", 100, 100);
+  await pointer(handle, "pointermove", 80, 70);
+  if (cancel === "Escape") await keyDown("Escape");
+  else await pointer(handle, cancel, 80, 70);
+  await pointer(handle, "pointerup", 80, 70);
+  expect((await openSavedProjectFromEditor()).layers).toEqual(project.layers);
+  expect(button("Undo").disabled).toBe(true);
+});
+
+test("default snapping aligns a rectangle with center and padding without enabling either toggle", async () => {
+  await mount(moveLayer(addRectangleLayer(openProject(), "shape"), "shape", 100, 100));
+  const layer = container.querySelector(".rectangle-layer")!;
+  await pointer(layer, "pointerdown", 100, 100);
+  await pointer(layer, "pointermove", 305, 244);
+  expect(layer.getAttribute("style")).toContain("left: 300px");
+  expect(container.querySelector(".snap-guide")!.textContent).toBe("Center");
+  await pointer(layer, "pointerup", 305, 244);
+  await pointer(layer, "pointerdown", 300, 240);
+  await pointer(layer, "pointermove", 23, 23);
+  expect(layer.getAttribute("style")).toContain("left: 20px");
+  expect(container.querySelector(".snap-guide")!.textContent).toBe("Padding · 20px");
+  await pointer(layer, "pointerup", 23, 23);
 });
 
 test("rectangle tool adds a selected editable layer and supports size, color, duplicate, delete and undo", async () => {
@@ -622,7 +671,7 @@ test("new text previews a shadow and exposes separate shadow and outline control
   ).toBe("grid");
   expect(text.style.fontSize).toBe("14px");
   expect(text.style.fontWeight).toBe("700");
-  expect(text.style.webkitTextStroke).toBe("1px #000000");
+  expect(text.style.webkitTextStroke).toBe("0px #000000");
   expect(text.style.textShadow).toBe("1px 1px 2px #000000");
   const shadow = container.querySelector<HTMLInputElement>(
     '[aria-label="Text shadow"]',
@@ -630,7 +679,7 @@ test("new text previews a shadow and exposes separate shadow and outline control
   expect(shadow.checked).toBe(true);
   await act(async () => shadow.click());
   expect(text.style.textShadow).toBe("");
-  expect(text.style.webkitTextStroke).toBe("1px #000000");
+  expect(text.style.webkitTextStroke).toBe("0px #000000");
   await click("Undo");
   expect(text.style.textShadow).toBe("1px 1px 2px #000000");
   await act(async () =>

@@ -81,12 +81,12 @@ test("invalid or unchanged background choices do not add history, and malformed 
   );
 });
 
-test("new chat text defaults to bold lettering with a thin outline and soft shadow", () => {
+test("new chat text defaults to bold lettering with no outline and a soft shadow", () => {
   expect(addTextLayer(openProject(), "chat").layers[0]).toMatchObject({
     fontFamily: "Arial",
     fontSize: 14,
     bold: true,
-    outlineWidth: 1,
+    outlineWidth: 0,
     shadow: { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" },
   });
 });
@@ -420,8 +420,8 @@ test("deleting an unknown layer is a no-op and deleting the only layer empties t
 test("a new project opens on a canvas with a visible size", () => {
   const project = openProject();
 
-  expect(project.canvasWidth).toBe(800);
-  expect(project.canvasHeight).toBe(600);
+  expect(project.canvasWidth).toBe(1920);
+  expect(project.canvasHeight).toBe(1080);
 });
 
 test("a saved project reopens with its editable canvas and layer stack intact", () => {
@@ -560,8 +560,8 @@ test("undo and redo restore the previous canvas size and view", () => {
   expect(afterViewUndo.canvasHeight).toBe(600);
 
   const afterSizeUndo = undo(afterViewUndo);
-  expect(afterSizeUndo.canvasWidth).toBe(800);
-  expect(afterSizeUndo.canvasHeight).toBe(600);
+  expect(afterSizeUndo.canvasWidth).toBe(1920);
+  expect(afterSizeUndo.canvasHeight).toBe(1080);
 
   const redone = redo(afterSizeUndo);
   expect(redone.canvasWidth).toBe(1150);
@@ -602,8 +602,8 @@ test.each([
       crop: { x: 0, y: 0, width: 320, height: 180 },
     },
   ]);
-  expect(project.canvasWidth).toBe(800);
-  expect(project.canvasHeight).toBe(600);
+  expect(project.canvasWidth).toBe(1920);
+  expect(project.canvasHeight).toBe(1080);
 });
 
 test("adding a text box creates a layer separate from the canvas", () => {
@@ -623,15 +623,15 @@ test("adding a text box creates a layer separate from the canvas", () => {
       fontFamily: "Arial",
       fontSize: 14,
       bold: true,
-      outlineWidth: 1,
+      outlineWidth: 0,
       outlineColor: "#000000",
       shadow: { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" },
       lineSpacing: 1.2,
       wrapWidth: 400,
     },
   ]);
-  expect(project.canvasWidth).toBe(800);
-  expect(project.canvasHeight).toBe(600);
+  expect(project.canvasWidth).toBe(1920);
+  expect(project.canvasHeight).toBe(1080);
 });
 
 test("repeated text boxes receive numbered layer names", () => {
@@ -973,8 +973,8 @@ test("dragging moves the image without moving or resizing the canvas", () => {
   const project = moveLayer(imported, "image-1", 48, 72);
 
   expect(project.layers[0]).toMatchObject({ x: 48, y: 72 });
-  expect(project.canvasWidth).toBe(800);
-  expect(project.canvasHeight).toBe(600);
+  expect(project.canvasWidth).toBe(1920);
+  expect(project.canvasHeight).toBe(1080);
   expect(project.panX).toBe(0);
   expect(project.panY).toBe(0);
 });
@@ -1211,8 +1211,8 @@ test("scaling changes the image size without changing the canvas size", () => {
   const project = scaleImageLayer(imported, "image-1", 1.5);
 
   expect(project.layers[0]).toMatchObject({ scale: 1.5 });
-  expect(project.canvasWidth).toBe(800);
-  expect(project.canvasHeight).toBe(600);
+  expect(project.canvasWidth).toBe(1920);
+  expect(project.canvasHeight).toBe(1080);
 });
 
 test("scale uses one undoable edit from preview through redo", () => {
@@ -1262,7 +1262,7 @@ test("fit scales the visible image region inside the canvas", () => {
 
   const fitted = fitImageLayerToCanvas(imported, "image-1");
 
-  expect(fitted.layers[0]).toMatchObject({ scale: 2.5 });
+  expect(fitted.layers[0]).toMatchObject({ scale: 6 });
   expect(undo(fitted).layers[0]).toMatchObject({ scale: 1 });
 });
 
@@ -1279,8 +1279,8 @@ test("cropping keeps only the chosen image region", () => {
   expect(project.layers[0]).toMatchObject({
     crop: { x: 20, y: 10, width: 240, height: 120 },
   });
-  expect(project.canvasWidth).toBe(800);
-  expect(project.canvasHeight).toBe(600);
+  expect(project.canvasWidth).toBe(1920);
+  expect(project.canvasHeight).toBe(1080);
 });
 
 test("cropping cannot restore pixels discarded by an earlier crop", () => {
