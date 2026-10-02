@@ -80,6 +80,7 @@ import { ImageCrop } from "./ImageCrop";
 import { ImageResizeHandles } from "./ImageResizeHandles";
 import { ImagePositionControls } from "./ImagePositionControls";
 import { RectangleControls } from "./RectangleControls";
+import { UpdateControls } from "./UpdateControls";
 import { snapToGrid } from "./grid";
 import { snapLayerPosition, type SnapGuide } from "./snapping";
 import {
@@ -1474,6 +1475,7 @@ export function App({ appearance, onAppearanceChange }: AppProps) {
               Save
             </button>
           </div>
+          <UpdateControls updates={window.shotMagicUpdates} />
           <label className="appearance-control ml-auto flex flex-none items-center gap-[6px] text-muted text-[12px]">
             <span>Appearance</span>
             <select

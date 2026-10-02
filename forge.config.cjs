@@ -7,6 +7,7 @@ module.exports = {
       /^\/\.github($|\/)/,
       /^\/\.scratch($|\/)/,
       /^\/docs($|\/)/,
+      /^\/desktop\/.*\.test\.ts$/,
       /^\/node_modules\/(?!electron-squirrel-startup(?:\/|$))/,
       /^\/src($|\/)/,
       /^\/out($|\/)/,
