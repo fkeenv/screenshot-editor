@@ -200,7 +200,7 @@ test("crop Fit shows the entire image rather than only the canvas, and zoom leav
   Object.defineProperty(viewport, "clientHeight", { value: 800 });
   await click("Fit image for crop");
   expect(container.querySelector<HTMLElement>(".canvas")!.style.transform).toBe(
-    "translate(59.07692307692308px, -214.15384615384616px) scale(0.24615384615384617)",
+    "translate(196.92307692307693px, -155.0769230769231px) scale(0.24615384615384617)",
   );
   await click("Zoom in crop");
   expect(
@@ -261,7 +261,7 @@ test("dragging previews a source-pixel crop, Apply commits once, and undo/redo p
     scale: 2,
     crop: { x: 52, y: 34, width: 208, height: 96 },
   });
-  expect(applied.canvasWidth).toBe(800);
+  expect(applied.canvasWidth).toBe(1920);
   expect(
     (container.querySelector('[name="cropX"]') as HTMLInputElement).value,
   ).toBe("52");

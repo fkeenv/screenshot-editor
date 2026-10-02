@@ -671,8 +671,8 @@ function clamp(value: number, min: number, max: number): number {
 export function openProject(): Project {
   return {
     canvasBackground: { kind: "transparent" },
-    canvasWidth: 800,
-    canvasHeight: 600,
+    canvasWidth: 1920,
+    canvasHeight: 1080,
     zoom: 1,
     panX: 0,
     panY: 0,
@@ -743,7 +743,7 @@ export function addTextLayer(
     fontFamily: "Arial",
     fontSize: 14,
     bold: true,
-    outlineWidth: 1,
+    outlineWidth: 0,
     outlineColor: "#000000",
     shadow: { offsetX: 1, offsetY: 1, blur: 2, color: "#000000" },
     lineSpacing: 1.2,
@@ -961,6 +961,12 @@ function updateAnyLayer(
 
 export type UndoableEditUpdate =
   | {
+      type: "resize-rectangle";
+      layerId: string;
+      corner: ImageResizeCorner;
+      screenDelta: { x: number; y: number };
+    }
+  | {
       type: "edit-text-content";
       layerId: string;
       content: TextContent;
@@ -1029,6 +1035,26 @@ function applyUndoableEdit(
   project: Project,
   update: UndoableEditUpdate,
 ): Project {
+  if (update.type === "resize-rectangle") {
+    return updateLayer(project, update.layerId, "rectangle", (layer) => {
+      const left = update.corner === "nw" || update.corner === "sw";
+      const top = update.corner === "nw" || update.corner === "ne";
+      const dx = update.screenDelta.x / project.zoom;
+      const dy = update.screenDelta.y / project.zoom;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return layer;
+      const width = Math.max(1, layer.width + (left ? -dx : dx));
+      const height = Math.max(1, layer.height + (top ? -dy : dy));
+      if (width === layer.width && height === layer.height) return layer;
+      const next = {
+        ...layer,
+        width,
+        height,
+        x: left ? layer.x + layer.width - width : layer.x,
+        y: top ? layer.y + layer.height - height : layer.y,
+      };
+      return isRectangleLayer(next) ? next : layer;
+    }, false);
+  }
   if (update.type === "edit-text-content") {
     return updateLayer(
       project,

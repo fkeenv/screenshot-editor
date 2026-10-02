@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   addRectangleLayer,
+  beginUndoableEdit,
   deleteLayer,
   duplicateLayer,
   editRectangleLayer,
@@ -19,13 +20,46 @@ import {
 } from "./editor";
 import { presentProject } from "./presentation";
 
+test.each(["nw", "ne", "sw", "se"] as const)("%s rectangle resize anchors the opposite corner and survives history and save/open", (corner) => {
+  const project = setView(addRectangleLayer(openProject(), "shape"), 2, 50, -30);
+  const original = project.layers[0];
+  if (original.kind !== "rectangle") throw new Error("Expected rectangle");
+  const gesture = beginUndoableEdit(project);
+  const update = { type: "resize-rectangle", layerId: "shape", corner, screenDelta: { x: 80, y: 40 } } as const;
+  const preview = gesture.preview(update);
+  expect(preview.past).toHaveLength(project.past.length);
+  const layer = preview.layers[0];
+  if (layer.kind !== "rectangle") throw new Error("Expected rectangle");
+  const left = corner === "nw" || corner === "sw";
+  const top = corner === "nw" || corner === "ne";
+  expect(layer.width).toBe(left ? 160 : 240);
+  expect(layer.height).toBe(top ? 100 : 140);
+  expect(left ? layer.x + layer.width : layer.x).toBe(left ? original.x + original.width : original.x);
+  expect(top ? layer.y + layer.height : layer.y).toBe(top ? original.y + original.height : original.y);
+  const finished = gesture.finish(update);
+  expect(finished.past).toHaveLength(project.past.length + 1);
+  expect(undo(finished).layers).toEqual(project.layers);
+  expect(redo(undo(finished)).layers).toEqual(finished.layers);
+  expect(openSavedProject(saveProject(finished)).layers).toEqual(finished.layers);
+  expect(gesture.cancel()).toBe(project);
+});
+
+test("rectangle resizing clamps at one pixel and invalid or unchanged deltas leave history untouched", () => {
+  const project = addRectangleLayer(openProject(), "shape");
+  const update = { type: "resize-rectangle", layerId: "shape", corner: "nw", screenDelta: { x: 9999, y: 9999 } } as const;
+  expect(beginUndoableEdit(project).finish(update).layers[0]).toMatchObject({ width: 1, height: 1, x: 1059, y: 599 });
+  for (const screenDelta of [{ x: 0, y: 0 }, { x: NaN, y: 0 }, { x: 0, y: Infinity }]) {
+    expect(beginUndoableEdit(project).finish({ ...update, screenDelta })).toBe(project);
+  }
+});
+
 test("rectangles are centered, selected-size independent, and one undoable addition", () => {
   const original = setView(openProject(), 2, 100, -50);
   const project = addRectangleLayer(original, "rectangle");
   expect(project.layers[0]).toMatchObject({
     kind: "rectangle",
-    x: 300,
-    y: 240,
+    x: 860,
+    y: 480,
     width: 200,
     height: 120,
     fill: "#d5b273",
@@ -83,8 +117,8 @@ test("rectangles use the shared layer operations, visibility, and ordered presen
   project = duplicateLayer(project, "rectangle", "copy");
   expect(project.layers[1]).toMatchObject({
     name: "Rectangle copy",
-    x: 316,
-    y: 256,
+    x: 876,
+    y: 496,
   });
   project = editRectangleLayer(project, "copy", { fill: "#ff0000" });
   expect(project.layers[0]).toMatchObject({ fill: "#d5b273" });

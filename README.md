@@ -32,10 +32,10 @@ Older versions without the update checker need one manual update from the Releas
 - **Cropping:** drag corner and edge handles to crop an image. Pan, zoom, or use Fit image to reach the edges of long screenshots. Apply or cancel without losing the original source image.
 - **GTA roleplay chat:** type or paste chat logs and place them over your screenshots. Recognized dialogue and action lines receive matching roleplay colors automatically. Choose named presets such as `/me`, `/do`, speech, whisper, and radio, with visible color swatches.
 - **Text editing:** edit text directly on the canvas and adjust font, size, bold, color, outline, shadow, line spacing, and text-box width.
-- **Rectangles:** add simple shapes with editable fill, size, position, and opacity.
+- **Rectangles:** add simple shapes with corner resize handles and editable fill, size, position, and opacity.
 - **Layers:** select, rename, reorder, hide, duplicate, or delete layers. Undo and redo edits.
-- **Alignment:** show an adjustable grid and enable grid snapping. Snap layers to canvas center, edges, corners, or padded corners, with labeled guides while dragging. Padding defaults to 16px; hold Shift to bypass snapping.
-- **Canvas and appearance:** choose preset or custom dimensions, a transparent or solid background, and light, dark, or system appearance. Hide the inspector or Layers panel for more room.
+- **Alignment:** layers always snap near the canvas center and sides with 20px padding, with labeled guides while dragging. Enable grid snapping or additional canvas-edge snapping for more alignment options. Hold Shift to bypass snapping.
+- **Canvas and appearance:** start with a 1920×1080 canvas or choose preset or custom dimensions, a transparent or solid background, and light, dark, or system appearance. Hide the inspector or Layers panel for more room.
 - **Scenes and stories:** save editable projects, export PNG/JPG/WebP images to share, or combine two or more saved scenes into a vertical stitch.
 
 Grid lines, alignment guides, selection borders, and text highlights are editing aids only. They do not appear in exports.
@@ -43,7 +43,7 @@ Grid lines, alignment guides, selection borders, and text highlights are editing
 ## Edit your first GTA roleplay screenshot
 
 1. Import your GTA roleplay screenshot, paste or drop it into ShotMagic, or select **Start blank** to create a composition from scratch.
-2. Paste your scene's chat log into the **Chat** tab, then choose **Place on canvas** and click where the text should go. Adjust the chat's formatting in Properties and use the rectangle tool when you need a simple shape.
+2. Paste your scene's chat log into the **Chat** tab, then choose **Place on canvas** to add it immediately. Drag the text to position it and adjust its formatting in Properties. Use the rectangle tool when you need a simple shape.
 3. Select a layer to edit it in **Properties**. Use **Layers** to change visibility and order.
 4. Enable **Grid**, **Snap**, or **Guides** when you need help with alignment. Adjust grid spacing and snap padding in Properties.
 5. Choose **Save** to keep an editable `.screenshot-project.json` file. Choose **Export** for a finished image, or use **Stitch** to combine several saved scenes into one story.

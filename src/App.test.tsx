@@ -27,4 +27,6 @@ test("an empty editor shows three starting paths outside the canvas", () => {
   expect(markup).toContain('aria-label="Chat draft"');
   expect(markup).toContain("Try a sample");
   expect(markup).toContain("Place on canvas");
+  expect(markup).toContain("1920×1080");
+  expect(markup).not.toContain("800×600");
 });

@@ -11,6 +11,13 @@ const options = {
   zoom: 1,
 };
 
+test("center and 20px padding remain magnetic with optional snapping off", () => {
+  const disabled = { ...options, canvas: false, padding: 20 };
+  expect(snapLayerPosition({ x: 305, y: 244 }, size, canvas, disabled)).toMatchObject({ x: 300, y: 240 });
+  expect(snapLayerPosition({ x: 23, y: 463 }, size, canvas, disabled)).toMatchObject({ x: 20, y: 460 });
+  expect(snapLayerPosition({ x: 2, y: 100 }, size, canvas, disabled)).toMatchObject({ x: 2, y: 100 });
+});
+
 test("layer center snaps to canvas center with visible axis guides", () => {
   expect(snapLayerPosition({ x: 305, y: 244 }, size, canvas, options)).toEqual({
     x: 300,
