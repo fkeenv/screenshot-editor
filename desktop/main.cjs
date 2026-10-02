@@ -1,4 +1,5 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, net, shell } = require("electron");
+const { createUpdateChecker, registerUpdateHandlers } = require("./updates.cjs");
 const { readFile, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -7,6 +8,7 @@ if (require("electron-squirrel-startup")) app.quit();
 
 const RENDERER_FILE = path.join(__dirname, "../dist/index.html");
 const DEVELOPMENT_ORIGIN = "http://127.0.0.1:5173";
+const UPDATES_ENABLED = app.isPackaged && process.platform === "win32";
 const IMAGE_EXTENSION_BY_MEDIA_TYPE = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -105,6 +107,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: UPDATES_ENABLED ? ["--shotmagic-update-checks"] : [],
     },
   });
 
@@ -134,6 +137,21 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerFileDialogs();
+  const checker = createUpdateChecker({
+    currentVersion: app.getVersion(),
+    enabled: UPDATES_ENABLED,
+    fetchRelease: (...args) => net.fetch(...args),
+    openExternal: (url) => shell.openExternal(url),
+  });
+  registerUpdateHandlers(ipcMain, checker, (event) => {
+    if (!UPDATES_ENABLED || event.senderFrame !== event.sender.mainFrame) return false;
+    try {
+      const url = new URL(event.senderFrame.url);
+      return url.protocol === "file:" && path.resolve(fileURLToPath(url)) === path.resolve(RENDERER_FILE);
+    } catch {
+      return false;
+    }
+  });
   createWindow();
 
   app.on("activate", () => {

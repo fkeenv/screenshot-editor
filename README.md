@@ -8,13 +8,23 @@ Use ShotMagic in your browser or as a Windows desktop app. Start with a screensh
 
 ## Download for Windows
 
-A Windows `.exe` installer is available on the [Releases page](https://github.com/fkeenv/screenshot-editor/releases).
+A Windows `.exe` installer is available on the [Releases page](https://github.com/fkeenv/shotmagic/releases).
 
 1. Open the latest release and expand **Assets**.
 2. Download the `.exe` installer.
 3. Run the installer, then open ShotMagic to start editing your GTA roleplay screenshots.
 
 You do not need Node.js or npm when using the installer.
+
+### Update ShotMagic
+
+The installed Windows app checks for updates when it starts. If a newer stable release has a Windows installer, a notice shows the available version. You can also choose **Check for updates** in the top bar.
+
+Choose **Download update** to open that release in your browser. Save your project, close ShotMagic, and run the new `.exe` installer. Updates are not downloaded or installed automatically, and dismissing the notice lets you keep editing.
+
+Update checks contact GitHub for public release information only; screenshots, chat logs, and projects are not sent. Offline startup checks stay quiet. A manual check reports connection errors and can be retried. Browser and desktop development builds do not check for updates.
+
+Older versions without the update checker need one manual update from the Releases page before they can show these notices.
 
 ## Features
 
@@ -86,5 +96,7 @@ The app uses React, TypeScript, Tailwind CSS, Mantine, and Tiptap, with Electron
 ## Releases and compatibility
 
 Versions use CalVer: `YYYY.M.PATCH`, such as `2026.10.0`. The final number increases for additional releases in the same month; months do not have leading zeros.
+
+To make a new version discoverable by the Windows app, update the version in `package.json` and `package-lock.json`, build the Windows installer, and publish a stable GitHub release tagged with that version (for example, `v2026.10.1`). Attach the finished `.exe` installer before publishing and mark the release as the latest release. Draft releases, prereleases, and releases without an uploaded installer are not announced. Uploading a CI artifact alone does not publish a release.
 
 See [release notes](CHANGELOG.md) for the current feature overview. Existing projects remain supported, but projects containing rectangle layers may not open in older builds.
