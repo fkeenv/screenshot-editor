@@ -29,23 +29,26 @@ export function snapLayerPosition(
     length: number,
     limit: number,
   ) {
-    if (options.canvas) {
+    {
       const targets = [
-        { value: 0, position: 0, label: "Edge · 0px" },
-        { value: limit - length, position: limit, label: `Edge · ${limit}px` },
         { value: (limit - length) / 2, position: limit / 2, label: "Center" },
       ];
-      if (options.padding > 0 && length <= limit - options.padding * 2) {
+      if (options.canvas) targets.push(
+        { value: 0, position: 0, label: "Edge · 0px" },
+        { value: limit - length, position: limit, label: `Edge · ${limit}px` },
+      );
+      const padding = options.canvas ? options.padding : 20;
+      if (padding > 0 && length <= limit - padding * 2) {
         targets.push(
           {
-            value: options.padding,
-            position: options.padding,
-            label: `Padding · ${options.padding}px`,
+            value: padding,
+            position: padding,
+            label: `Padding · ${padding}px`,
           },
           {
-            value: limit - length - options.padding,
-            position: limit - options.padding,
-            label: `Padding · ${options.padding}px`,
+            value: limit - length - padding,
+            position: limit - padding,
+            label: `Padding · ${padding}px`,
           },
         );
       }

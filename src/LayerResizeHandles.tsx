@@ -1,5 +1,5 @@
 import type { CSSProperties, PointerEvent } from "react";
-import type { ImageLayer, ImageResizeCorner } from "./editor";
+import type { ImageLayer, ImageResizeCorner, RectangleLayer } from "./editor";
 
 const CORNERS = [
   ["nw", "top left"],
@@ -8,20 +8,20 @@ const CORNERS = [
   ["se", "bottom right"],
 ] as const;
 
-export function ImageResizeHandles({
+export function LayerResizeHandles({
   layer,
   zoom,
   onStart,
 }: {
-  layer: ImageLayer;
+  layer: ImageLayer | RectangleLayer;
   zoom: number;
   onStart: (
     event: PointerEvent<HTMLButtonElement>,
     corner: ImageResizeCorner,
   ) => void;
 }) {
-  const width = layer.crop.width * layer.scale;
-  const height = layer.crop.height * layer.scale;
+  const width = layer.kind === "image" ? layer.crop.width * layer.scale : layer.width;
+  const height = layer.kind === "image" ? layer.crop.height * layer.scale : layer.height;
   return (
     <>
       <div
@@ -54,7 +54,7 @@ export function ImageResizeHandles({
             key={corner}
             type="button"
             className={`image-resize-handle ${corner}`}
-            aria-label={`Resize image ${label}`}
+            aria-label={`Resize ${layer.kind} ${label}`}
             onPointerDown={(event) => onStart(event, corner)}
           />
         ))}
